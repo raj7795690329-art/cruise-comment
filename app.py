@@ -193,7 +193,7 @@ st.markdown("""
             color: #111111;
         }
 
-        /* 7-IMAGE OVERLAPPING HERO GALLERY */
+        /* 7-IMAGE OVERLAPPING HERO GALLERY FIX */
         .hero-gallery {
             display: flex !important;
             flex-direction: row !important;
@@ -319,14 +319,25 @@ st.markdown("""
             gap: 6px;
         }
 
-        /* Input Clean-up */
-        [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
-            background-color: #FBFBFD !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important;
-            box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; 
+        /* 🟢 FORCED LIGHT-THEME INPUT BOXES (OVERRIDING SYSTEM DARK MODE) 🟢 */
+        [data-baseweb="base-input"], [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
+            background-color: #F4F4F5 !important; 
+            border: 1px solid #D1D1D6 !important; 
+            border-radius: 6px !important;
+            box-shadow: none !important; 
+            transition: border-color 0.15s ease; 
         }
+        [data-baseweb="input"], [data-baseweb="select"] > div { height: 38px !important; }
         [data-baseweb="textarea"] > div { height: auto !important; }
         [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #111111 !important; }
-        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
+        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { 
+            background-color: transparent !important; 
+            color: #111111 !important; 
+            -webkit-text-fill-color: #111111 !important;
+            font-size: 13px !important; 
+            padding: 8px 12px !important; 
+            line-height: 1.4 !important; 
+        }
         
         /* TOGGLE SWITCH (RED/GREEN) */
         div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
@@ -1337,7 +1348,11 @@ elif st.session_state.get("youtube_creds") is None:
                 user_api_key = st.text_input("API Key", type="password", placeholder="Paste Gemini API Key here", label_visibility="collapsed")
                 
                 if st.button("🤖 Test AI Connection", use_container_width=True, key="free_btn"):
-                    if user_api_key:
+                    if not user_api_key or user_api_key.strip() == "":
+                        st.error("⚠️ Please paste your Gemini API key first.")
+                    elif not user_api_key.startswith("AIza"):
+                        st.error("⚠️ Invalid API Key format. Gemini keys usually start with 'AIza'.")
+                    else:
                         with st.spinner("Connecting to Gemini..."):
                             try:
                                 client = genai.Client(api_key=user_api_key)
@@ -1345,11 +1360,13 @@ elif st.session_state.get("youtube_creds") is None:
                                     model="gemini-3.5-flash-lite", 
                                     contents="Say hello in 3 words."
                                 )
-                                st.success("✓ API key passed. Please click on Connect YouTube to proceed.")
-                            except Exception:
-                                st.error("Authentication rejected. Please verify your API key.")
-                    else:
-                        st.warning("API Key required to test connection.")
+                                st.success("✅ Connection established! Click on 'Connect YouTube' below to proceed.")
+                            except Exception as e:
+                                error_msg = str(e).lower()
+                                if "api_key_invalid" in error_msg or "400" in error_msg or "unauthorized" in error_msg:
+                                    st.error("❌ Wrong API Key. Please verify and try again.")
+                                else:
+                                    st.error(f"❌ Connection failed. Please try again later.")
             
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1382,11 +1399,11 @@ elif st.session_state.get("youtube_creds") is None:
                                     model="gemini-3.5-flash-lite", 
                                     contents="Say hello in 3 words."
                                 )
-                                st.success("✓ Master AI engine active. Please click on Connect YouTube to proceed.")
+                                st.success("✅ Master AI connection established! Click on 'Connect YouTube' below to proceed.")
                             except Exception:
-                                st.error("Master system error.")
+                                st.error("❌ Master system error. Please try again.")
                     else:
-                        st.error("Configuration missing.")
+                        st.error("❌ Configuration missing. Master key not found.")
             
             st.markdown(f'''
             <div class="pricing-bottom-zone">
