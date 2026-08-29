@@ -195,47 +195,52 @@ st.markdown("""
 
         /* 7-IMAGE OVERLAPPING HERO GALLERY */
         .hero-gallery {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 24px 0 48px 0; 
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            justify-content: center !important;
+            align-items: center !important;
+            margin: 24px auto 48px auto !important; 
+            width: 100% !important;
+            min-height: 300px !important;
         }
         .hero-item {
-            position: relative;
-            border-radius: 18px; 
-            overflow: hidden;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            background: #FFFFFF;
-            filter: brightness(1.02) contrast(1.02); 
-            margin: 0 -12px; 
-            border: 3px solid #FBFBFD; 
+            position: relative !important;
+            flex: 0 0 auto !important;
+            border-radius: 18px !important; 
+            overflow: hidden !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+            background: #FFFFFF !important;
+            filter: brightness(1.02) contrast(1.02) !important; 
+            margin: 0 -12px !important; 
+            border: 3px solid #FBFBFD !important; 
         }
         .hero-item:hover {
             transform: translateY(-8px) scale(1.03) !important;
-            box-shadow: 0 16px 40px rgba(0,0,0,0.15);
-            filter: brightness(1.08) contrast(1.05);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.15) !important;
+            filter: brightness(1.08) contrast(1.05) !important;
             z-index: 20 !important; 
         }
         .hero-item img {
-            display: block;
-            object-fit: cover;
-            width: 100%;
-            height: 100%;
+            display: block !important;
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
         }
         
-        .hero-main  { width: 240px; height: 280px; z-index: 4; }
-        .hero-side  { width: 190px; height: 230px; z-index: 3; }
-        .hero-far   { width: 140px; height: 180px; z-index: 2; }
-        .hero-outer { width: 100px; height: 130px; z-index: 1; }
+        .hero-main  { width: 240px !important; height: 280px !important; z-index: 4 !important; }
+        .hero-side  { width: 190px !important; height: 230px !important; z-index: 3 !important; }
+        .hero-far   { width: 140px !important; height: 180px !important; z-index: 2 !important; }
+        .hero-outer { width: 100px !important; height: 130px !important; z-index: 1 !important; }
 
-        .hero-outer.left { top: 24px; }
-        .hero-far.left   { top: -16px; }
-        .hero-side.left  { top: 12px; }
-        .hero-main       { top: 0px; }
-        .hero-side.right { top: -12px; }
-        .hero-far.right  { top: 16px; }
-        .hero-outer.right{ top: -24px; }
+        .hero-outer.left { top: 24px !important; }
+        .hero-far.left   { top: -16px !important; }
+        .hero-side.left  { top: 12px !important; }
+        .hero-main       { top: 0px !important; }
+        .hero-side.right { top: -12px !important; }
+        .hero-far.right  { top: 16px !important; }
+        .hero-outer.right{ top: -24px !important; }
 
         /* PERFECT SYMMETRICAL FLEX GRID FOR PRICING TIERS */
         [data-testid="column"]:has(.pricing-card-marker) { display: flex; flex-direction: column; }
@@ -617,7 +622,7 @@ if st.session_state.get("youtube_creds") is not None:
         
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
         st.markdown("<div class='sb-header'>INSTAGRAM</div>", unsafe_allow_html=True)
-        st.markdown(f'<a href="#" target="_self" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
         st.markdown("</div><div class='sb-divider'></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
@@ -1275,29 +1280,29 @@ elif st.session_state.get("youtube_creds") is None:
     """, unsafe_allow_html=True)
     
     st.markdown("""
-    <div class="hero-gallery">
-        <div class="hero-item hero-outer left">
-            <img src="https://images.unsplash.com/photo-1516251193007-45ef944ab0c6?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Creator Studio">
+        <div class="hero-gallery">
+            <div class="hero-item hero-outer left">
+                <img src="https://images.unsplash.com/photo-1516251193007-45ef944ab0c6?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Creator Studio">
+            </div>
+            <div class="hero-item hero-far left">
+                <img src="https://images.unsplash.com/photo-1611262588024-d12430b98920?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Instagram Interface">
+            </div>
+            <div class="hero-item hero-side left">
+                <img src="https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Influencer Girl">
+            </div>
+            <div class="hero-item hero-main">
+                <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Social Media Manager">
+            </div>
+            <div class="hero-item hero-side right">
+                <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Influencer Guy">
+            </div>
+            <div class="hero-item hero-far right">
+                <img src="https://images.unsplash.com/photo-1611162616475-46b635cb6868?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="YouTube Interface">
+            </div>
+            <div class="hero-item hero-outer right">
+                <img src="https://images.unsplash.com/photo-1511367461989-f85a21fda167?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Working from phone">
+            </div>
         </div>
-        <div class="hero-item hero-far left">
-            <img src="https://images.unsplash.com/photo-1611262588024-d12430b98920?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Instagram Interface">
-        </div>
-        <div class="hero-item hero-side left">
-            <img src="https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Influencer Girl">
-        </div>
-        <div class="hero-item hero-main">
-            <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Social Media Manager">
-        </div>
-        <div class="hero-item hero-side right">
-            <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Influencer Guy">
-        </div>
-        <div class="hero-item hero-far right">
-            <img src="https://images.unsplash.com/photo-1611162616475-46b635cb6868?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="YouTube Interface">
-        </div>
-        <div class="hero-item hero-outer right">
-            <img src="https://images.unsplash.com/photo-1511367461989-f85a21fda167?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Working from phone">
-        </div>
-    </div>
     """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3, gap="medium")
@@ -1315,7 +1320,8 @@ elif st.session_state.get("youtube_creds") is None:
                 <div class="tier-feature"><span>✓</span> Single creator account</div>
                 """, unsafe_allow_html=True)
                 
-                details_guide = """
+                # COLLAPSIBLE HOW-TO API KEY GUIDE
+                st.markdown("""
                 <details class="api-guide">
                     <summary>📖 How to get your Google API key</summary>
                     <ol>
@@ -1326,8 +1332,7 @@ elif st.session_state.get("youtube_creds") is None:
                         <li>Once verified, click <strong>Connect YouTube</strong> to start!</li>
                     </ol>
                 </details>
-                """
-                st.markdown(details_guide, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
                 user_api_key = st.text_input("API Key", type="password", placeholder="Paste Gemini API Key here", label_visibility="collapsed")
                 
@@ -1349,8 +1354,8 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="{auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>
-                    <a href="#" target="_self" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                    <a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>
+                    <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
@@ -1386,8 +1391,8 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="{auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>
-                    <a href="#" target="_self" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                    <a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>
+                    <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
@@ -1408,7 +1413,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="#" target="_self" class="auth-btn disabled-btn">Initialize Agency Engine <span class="beta-tag">BETA</span></a>
+                    <a href="#" target="_top" class="auth-btn disabled-btn">Initialize Agency Engine <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
