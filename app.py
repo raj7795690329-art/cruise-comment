@@ -27,6 +27,9 @@ MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
 MASTER_REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app")
 
+# Hardcoded Live App URL so users never have to guess or type it
+APP_URL = "https://cruise-comment-ai.streamlit.app"
+
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # --- Page Config ---
@@ -57,7 +60,7 @@ defaults = {
     "user_gemini_api_key": None,
     "user_client_id": "",
     "user_client_secret": "",
-    "user_redirect_uri": "https://cruise-comment-ai.streamlit.app",
+    "user_redirect_uri": APP_URL,
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -1538,7 +1541,7 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
-                # --- DYNAMIC YOUTUBE OAUTH INPUTS (NO REDIRECT URI INPUT) ---
+                # --- DYNAMIC YOUTUBE OAUTH INPUTS ---
                 with st.form("oauth_fallback_form"):
                     ui_cid = st.text_input("Google Client ID", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
                     ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
@@ -1662,7 +1665,7 @@ elif st.session_state.get("youtube_creds") is None:
                     flow = Flow.from_client_config(
                         client_config,
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-                        redirect_uri=MASTER_REDIRECT_URI
+                        redirect_uri=APP_URL
                     )
                     pro_auth_url, _ = flow.authorization_url(
                         prompt='consent', 
