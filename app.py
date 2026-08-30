@@ -1,3 +1,43 @@
+"""
+=========================================================================================
+🚀 CRUISE COMMENT - MASTER SETUP & DEPLOYMENT GUIDE
+=========================================================================================
+This application requires two separate connections to Google's infrastructure:
+1. The Gemini AI Engine (API Key)
+2. YouTube Account Access (OAuth 2.0 Client ID)
+
+If you are cloning or deploying this app, you do NOT need to hardcode secrets into 
+Streamlit Cloud or a .env file. The app features a dynamic UI that will prompt the 
+user for these keys if they are missing.
+
+HOWEVER, you must configure Google Cloud correctly to allow the YouTube login:
+
+--- STEP 1: ENABLE APIS ---
+1. Go to Google Cloud Console (console.cloud.google.com).
+2. Go to APIs & Services > Library.
+3. Enable "YouTube Data API v3".
+4. Enable "Gemini API" (previously Generative Language API).
+
+--- STEP 2: CONFIGURE OAUTH SCREEN ---
+1. Go to APIs & Services > OAuth consent screen.
+2. Choose "External" (or Internal if using Google Workspace).
+3. Fill out App Name, User Support Email, and Developer Contact.
+4. Click "Save and Continue".
+5. Add Scope: ".../auth/youtube.force-ssl" (Required to reply to comments).
+6. Add your personal Google email as a "Test User" so you can log in during Beta.
+
+--- STEP 3: GENERATE OAUTH CREDENTIALS (THE LOGIN BOUNCER) ---
+1. Go to APIs & Services > Credentials.
+2. Click "+ Create Credentials" > "OAuth client ID".
+3. Application Type: "Web application".
+4. Authorized Redirect URIs: THIS IS CRITICAL. 
+   - Local testing: Add `http://localhost:8501`
+   - Live Website: Add your exact live Streamlit URL (e.g., `https://cruise-comment.streamlit.app`)
+5. Save. You will receive a Client ID and Client Secret. 
+   (The user can paste these directly into the app UI).
+=========================================================================================
+"""
+
 import streamlit as st
 import os
 from dotenv import load_dotenv
@@ -22,11 +62,6 @@ def get_secret(key, default=None):
     return default
 
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
-CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
-
-# Dynamic Routing. Uses live URL if set, otherwise defaults to local testing.
-REDIRECT_URI = get_secret("REDIRECT_URI", "http://localhost:8501") 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -56,6 +91,9 @@ defaults = {
     "processed_history": [], 
     "ai_drafts": {},
     "user_gemini_api_key": None,
+    "user_client_id": None,
+    "user_client_secret": None,
+    "user_redirect_uri": "https://cruise-comment-a.streamlit.app",
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -104,6 +142,12 @@ def get_relative_time(dt):
         return f"{months} month{'s' if months != 1 else ''} ago"
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
+
+# --- Fetch Active OAuth Credentials ---
+# Prioritizes User UI Input -> Streamlit Secrets -> .env Defaults
+ACTIVE_CLIENT_ID = st.session_state.get("user_client_id") or get_secret("GOOGLE_CLIENT_ID")
+ACTIVE_CLIENT_SECRET = st.session_state.get("user_client_secret") or get_secret("GOOGLE_CLIENT_SECRET")
+ACTIVE_REDIRECT_URI = st.session_state.get("user_redirect_uri") or get_secret("REDIRECT_URI", "http://localhost:8501")
 
 # --- Strict Apple-Inspired Monochromatic Design System ---
 st.markdown("""
@@ -486,8 +530,8 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
     try:
         client_config = {
             "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_id": ACTIVE_CLIENT_ID,
+                "client_secret": ACTIVE_CLIENT_SECRET,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
@@ -495,7 +539,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow = Flow.from_client_config(
             client_config,
             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-            redirect_uri=REDIRECT_URI
+            redirect_uri=ACTIVE_REDIRECT_URI
         )
         if os.path.exists(".verifier"):
             with open(".verifier", "r") as f:
@@ -1389,12 +1433,14 @@ elif st.session_state.get("youtube_creds") is None:
     
     auth_url = "#"
     oauth_error_msg = None
-    if CLIENT_ID and CLIENT_SECRET:
+    
+    # Try to build the OAuth link if credentials are provided via memory or secrets
+    if ACTIVE_CLIENT_ID and ACTIVE_CLIENT_SECRET:
         try:
             client_config = {
                 "web": {
-                    "client_id": CLIENT_ID,
-                    "client_secret": CLIENT_SECRET,
+                    "client_id": ACTIVE_CLIENT_ID,
+                    "client_secret": ACTIVE_CLIENT_SECRET,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
                 }
@@ -1402,7 +1448,7 @@ elif st.session_state.get("youtube_creds") is None:
             flow = Flow.from_client_config(
                 client_config,
                 scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-                redirect_uri=REDIRECT_URI
+                redirect_uri=ACTIVE_REDIRECT_URI
             )
             auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
             st.session_state["saved_code_verifier"] = flow.code_verifier
@@ -1411,7 +1457,7 @@ elif st.session_state.get("youtube_creds") is None:
         except Exception as e:
             oauth_error_msg = str(e)
     else:
-        oauth_error_msg = "OAuth credentials (GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET) missing from configuration."
+        oauth_error_msg = "Google OAuth credentials required."
 
     st.markdown("""
     <div class="system-header">
@@ -1510,7 +1556,7 @@ elif st.session_state.get("youtube_creds") is None:
                                 st.session_state["user_gemini_api_key"] = user_api_key.strip()
                                 st.markdown("""
                                 <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    ✓ Connection established! Click on Connect YouTube below.
+                                    ✓ Connection established! Proceed to YouTube Connection.
                                 </div>
                                 """, unsafe_allow_html=True)
                             except Exception as e:
@@ -1520,19 +1566,45 @@ elif st.session_state.get("youtube_creds") is None:
                                 </div>
                                 """, unsafe_allow_html=True)
             
+            # --- DYNAMIC YOUTUBE OAUTH INPUT FALLBACK ---
             if auth_url != "#":
                 auth_link_html = f'<a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
-            else:
-                auth_link_html = f'<div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 8px; border-radius: 6px; font-size: 12px; margin-bottom: 8px;">🛑 {oauth_error_msg}</div><a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
-
-            st.markdown(f'''
-            <div class="pricing-bottom-zone">
-                <div class="bottom-action-group">
-                    {auth_link_html}
-                    <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                st.markdown(f'''
+                <div class="pricing-bottom-zone">
+                    <div class="bottom-action-group">
+                        {auth_link_html}
+                        <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                    </div>
                 </div>
-            </div>
-            ''', unsafe_allow_html=True)
+                ''', unsafe_allow_html=True)
+            else:
+                details_oauth_guide = """
+                <details class="api-guide-main" style="border-color: #FFCC00; background-color: #FFF8E6;">
+                    <summary style="color: #995B00;">🎥 How to setup YouTube Connection</summary>
+                    <div class="guide-toggle-box">
+                        <ol style="color: #555;">
+                            <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > Credentials.</li>
+                            <li>Click <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
+                            <li>Under <strong>Authorized redirect URIs</strong>, paste the link from the 3rd box below.</li>
+                            <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
+                            <li>Click Save Credentials to connect.</li>
+                        </ol>
+                    </div>
+                </details>
+                """
+                st.markdown(details_oauth_guide, unsafe_allow_html=True)
+                
+                with st.form("oauth_fallback_form"):
+                    ui_cid = st.text_input("Google Client ID", placeholder="Ends in .apps.googleusercontent.com")
+                    ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Enter Client Secret")
+                    ui_red = st.text_input("Redirect URI", value=st.session_state.get("user_redirect_uri"))
+                    submitted = st.form_submit_button("Save Credentials", use_container_width=True)
+                    
+                    if submitted:
+                        st.session_state["user_client_id"] = ui_cid.strip()
+                        st.session_state["user_client_secret"] = ui_sec.strip()
+                        st.session_state["user_redirect_uri"] = ui_red.strip()
+                        st.rerun()
 
     with c2:
         with st.container(border=True):
