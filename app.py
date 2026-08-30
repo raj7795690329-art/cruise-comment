@@ -450,7 +450,7 @@ st.markdown("""
         /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; cursor: not-allowed; }
 
         /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
@@ -1541,7 +1541,7 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
-                # --- DYNAMIC YOUTUBE OAUTH INPUTS ---
+                # --- DYNAMIC YOUTUBE OAUTH INPUTS (NO REDIRECT URI INPUT) ---
                 with st.form("oauth_fallback_form"):
                     ui_cid = st.text_input("Google Client ID", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
                     ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
@@ -1549,7 +1549,7 @@ elif st.session_state.get("youtube_creds") is None:
                     # Bring back the Redirect URI input so users can make a 1:1 match if they need to
                     ui_red = st.text_input("Redirect URI", value=st.session_state.get("user_redirect_uri", APP_URL), placeholder="Must match Google Cloud exactly")
                     
-                    submitted = st.form_submit_button("Save Credentials", use_container_width=True)
+                    submitted = st.form_submit_button("💾 Save Credentials (Click Here First)", use_container_width=True, type="primary")
                     
                     if submitted:
                         st.session_state["user_client_id"] = ui_cid.strip()
@@ -1596,11 +1596,11 @@ elif st.session_state.get("youtube_creds") is None:
                         free_oauth_error = str(e)
 
                 if free_auth_url != "#":
-                    # target="_top" securely breaks out of the Streamlit iframe sandbox
-                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    # target="_blank" securely breaks out of the Streamlit iframe sandbox
+                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
-                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID, Secret, and Redirect URI first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Action Required: Please click the Save Credentials button above first!\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1681,7 +1681,7 @@ elif st.session_state.get("youtube_creds") is None:
                     pass
 
             if pro_auth_url != "#":
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
