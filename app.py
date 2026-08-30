@@ -8,14 +8,25 @@ import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
 
-# --- Open the secure vault ---
+# --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
-MASTER_API_KEY = os.getenv("GEMINI_API_KEY")
-CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# Dynamic Routing. It will use your live URL if available, otherwise defaults to local testing.
-REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501") 
+def get_secret(key, default=None):
+    if key in os.environ and os.environ[key]:
+        return os.environ[key]
+    try:
+        if key in st.secrets and st.secrets[key]:
+            return st.secrets[key]
+    except Exception:
+        pass
+    return default
+
+MASTER_API_KEY = get_secret("GEMINI_API_KEY")
+CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
+
+# Dynamic Routing. Uses live URL if set, otherwise defaults to local testing.
+REDIRECT_URI = get_secret("REDIRECT_URI", "http://localhost:8501") 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -44,6 +55,7 @@ defaults = {
     "sent_replies_log": {},
     "processed_history": [], 
     "ai_drafts": {},
+    "user_gemini_api_key": None,
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -270,26 +282,64 @@ st.markdown("""
         .tier-feature span { color: #111111; font-weight: 600; }
         .beta-tag { font-size: 10px; background-color: #E5E5EA; color: #555; padding: 2px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
 
-        /* Collapsible API Guide */
-        details.api-guide {
+        /* Main Collapsible Guide */
+        details.api-guide-main {
             background-color: #F8F8FA;
+            border: 1px solid #E5E5EA;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            font-size: 13px;
+        }
+        details.api-guide-main summary {
+            font-weight: 600;
+            color: #111111;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
+        }
+        
+        /* Dual Nested Interactive Guide Cards */
+        .guide-toggle-box {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        details.sub-guide {
+            background: #FFFFFF;
             border: 1px solid #E5E5EA;
             border-radius: 6px;
             padding: 8px 12px;
-            margin-bottom: 12px;
             font-size: 12px;
+            transition: all 0.15s ease;
         }
-        details.api-guide summary {
-            font-weight: 500;
-            color: #333333;
+        details.sub-guide:hover {
+            border-color: #111111;
+            background: #FAFAFC;
+        }
+        details.sub-guide summary {
+            font-weight: 600;
+            color: #222222;
             cursor: pointer;
             outline: none;
         }
-        details.api-guide ol {
+        details.sub-guide ol {
             margin: 8px 0 4px 16px;
             padding: 0;
             color: #555555;
-            line-height: 1.4;
+            line-height: 1.5;
+        }
+        details.sub-guide ol li {
+            margin-bottom: 4px;
+        }
+        details.sub-guide a {
+            color: #007AFF;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        details.sub-guide a:hover {
+            text-decoration: underline;
         }
 
         /* Clean Connected Cards */
@@ -870,7 +920,8 @@ if st.session_state.get("youtube_creds") is not None:
                 btn_text = "🤖 Auto-Replying..." if is_replying_btn else "🤖 Reply All with AI"
                 
                 if st.button(btn_text, type="primary", disabled=is_replying_btn, use_container_width=True):
-                    if MASTER_API_KEY:
+                    active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                    if active_key:
                         pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
                         
                         if not pending_in_view:
@@ -883,7 +934,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.session_state["auto_reply_paused"] = False 
                             st.rerun() 
                     else:
-                        st.error("API Key missing.")
+                        st.error("API Key missing. Please provide an API key in the Setup.")
 
             # ROW 2: PROGRESS DASHBOARD (Locked inside Sticky Header)
             if st.session_state.get("auto_reply_total") > 0:
@@ -1129,16 +1180,17 @@ if st.session_state.get("youtube_creds") is not None:
                         ca_btn, ca_mood, ca_len, ca_empty = st.columns([2.5, 1.5, 1.5, 2.5], vertical_alignment="bottom")
                         with ca_btn:
                             if st.button("🤖 Draft AI Reply", key=f"ai_{comment_id}", use_container_width=True):
-                                if MASTER_API_KEY:
+                                active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                                if active_key:
                                     with st.spinner("Drafting..."):
                                         try:
-                                            client = genai.Client(api_key=MASTER_API_KEY)
+                                            client = genai.Client(api_key=active_key)
                                             active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                             chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                             chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                             
                                             single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
-                                            # Truncate description to 800 characters to prevent Token Overload / slow generation
+                                            # Truncate description to 800 characters to prevent Token Overload
                                             single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
 
                                             ambient_prompt_section = ""
@@ -1177,7 +1229,6 @@ Criteria:
 
 Output ONLY the reply text."""
                                             
-                                            # Using a real, high-speed model
                                             response = client.models.generate_content(
                                                 model="gemini-3.6-flash", 
                                                 contents=prompt
@@ -1187,7 +1238,7 @@ Output ONLY the reply text."""
                                         except Exception as e:
                                             st.error(f"Service unavailable: {e}")
                                 else:
-                                    st.error("System configuration missing.")
+                                    st.error("API Key missing. Please provide an API key in Setup.")
                         with ca_mood:
                             st.markdown("<div style='font-size:11px; font-weight:600; color:#888; text-transform:uppercase; margin-bottom:4px; letter-spacing:0.04em;'>Mood</div>", unsafe_allow_html=True)
                             local_mood = st.selectbox("Mood", mood_options, index=mood_options.index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
@@ -1233,7 +1284,7 @@ Output ONLY the reply text."""
             </div>
             """, unsafe_allow_html=True)
 
-        # --- THE MISSING ENGINE: PROCESS THE AUTO-REPLY QUEUE ---
+        # --- PROCESS THE AUTO-REPLY QUEUE ---
         if is_replying_active and not st.session_state.get("auto_reply_paused"):
             current_item = st.session_state["auto_reply_queue"][0]
             comment_id = current_item["id"]
@@ -1241,7 +1292,8 @@ Output ONLY the reply text."""
             text = current_item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
             
             try:
-                client = genai.Client(api_key=MASTER_API_KEY)
+                active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -1297,9 +1349,9 @@ Output ONLY the reply text."""
             except Exception as e:
                 print(f"Auto-reply error: {e}")
             
-            # Pop the queue so it actually moves to the next comment
+            # Pop the queue so it moves to the next comment
             st.session_state["auto_reply_queue"].pop(0)
-            time.sleep(1) # Safety delay to prevent YouTube API bans
+            time.sleep(1) # Safety delay to prevent YouTube API limits
             st.rerun()
 
         # --- AUTOPILOT ---
@@ -1336,6 +1388,7 @@ Output ONLY the reply text."""
 elif st.session_state.get("youtube_creds") is None:
     
     auth_url = "#"
+    oauth_error_msg = None
     if CLIENT_ID and CLIENT_SECRET:
         try:
             client_config = {
@@ -1355,8 +1408,10 @@ elif st.session_state.get("youtube_creds") is None:
             st.session_state["saved_code_verifier"] = flow.code_verifier
             with open(".verifier", "w") as f:
                 f.write(flow.code_verifier)
-        except Exception:
-            pass
+        except Exception as e:
+            oauth_error_msg = str(e)
+    else:
+        oauth_error_msg = "OAuth credentials (GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET) missing from configuration."
 
     st.markdown("""
     <div class="system-header">
@@ -1406,16 +1461,31 @@ elif st.session_state.get("youtube_creds") is None:
                 <div class="tier-feature"><span>✓</span> Single creator account</div>
                 """, unsafe_allow_html=True)
                 
+                # --- DUAL-HOVER INTERACTIVE GOOGLE AI STUDIO GUIDE ---
                 details_guide = """
-                <details class="api-guide">
-                    <summary>📖 How to get your Google API key</summary>
-                    <ol>
-                        <li>Go to <strong>Google AI Studio</strong> (aistudio.google.com) or Google Cloud Console.</li>
-                        <li>Sign in with your Google account and click <strong>Get API key</strong>.</li>
-                        <li>Create a key in a new or existing project and copy it.</li>
-                        <li>Paste your key in the box below and click <strong>Test AI Connection</strong>.</li>
-                        <li>Once verified, click <strong>Connect YouTube</strong> to start!</li>
-                    </ol>
+                <details class="api-guide-main">
+                    <summary>📖 How to get your Google API key (AI Studio)</summary>
+                    <div class="guide-toggle-box">
+                        <details class="sub-guide">
+                            <summary>🆕 New User (Create an API Key)</summary>
+                            <ol>
+                                <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> and sign in.</li>
+                                <li>Click the blue <strong>Create API key</strong> button in the top-right.</li>
+                                <li>Select <strong>Default Gemini Project</strong> from the dropdown and click <strong>Create</strong>.</li>
+                                <li>Click the <strong>Copy icon</strong> to copy your new key.</li>
+                                <li>Paste your key into the box below and click <strong>Test AI Connection</strong>.</li>
+                            </ol>
+                        </details>
+                        <details class="sub-guide">
+                            <summary>🔑 Existing User (Find your API Key)</summary>
+                            <ol>
+                                <li>Go directly to <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio API Keys</a>.</li>
+                                <li>In the table under <strong>API Keys</strong>, locate your active project key.</li>
+                                <li>Click the <strong>Copy icon</strong> next to your key.</li>
+                                <li>Paste your key into the box below and click <strong>Test AI Connection</strong>.</li>
+                            </ol>
+                        </details>
+                    </div>
                 </details>
                 """
                 st.markdown(details_guide, unsafe_allow_html=True)
@@ -1437,6 +1507,7 @@ elif st.session_state.get("youtube_creds") is None:
                                     model="gemini-3.6-flash", 
                                     contents="Say hello in 3 words."
                                 )
+                                st.session_state["user_gemini_api_key"] = user_api_key.strip()
                                 st.markdown("""
                                 <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
                                     ✓ Connection established! Click on Connect YouTube below.
@@ -1449,10 +1520,15 @@ elif st.session_state.get("youtube_creds") is None:
                                 </div>
                                 """, unsafe_allow_html=True)
             
+            if auth_url != "#":
+                auth_link_html = f'<a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+            else:
+                auth_link_html = f'<div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 8px; border-radius: 6px; font-size: 12px; margin-bottom: 8px;">🛑 {oauth_error_msg}</div><a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>
+                    {auth_link_html}
                     <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
@@ -1494,14 +1570,19 @@ elif st.session_state.get("youtube_creds") is None:
                     else:
                         st.markdown("""
                         <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                            🛑 Configuration missing.
+                            🛑 Master API key missing in environment/secrets.
                         </div>
                         """, unsafe_allow_html=True)
             
+            if auth_url != "#":
+                pro_auth_link = f'<a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+            else:
+                pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="{auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>
+                    {pro_auth_link}
                     <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
