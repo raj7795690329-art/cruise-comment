@@ -319,25 +319,15 @@ st.markdown("""
             gap: 6px;
         }
 
-        /* 🟢 FORCED LIGHT-THEME INPUT BOXES (OVERRIDING SYSTEM DARK MODE) 🟢 */
-        [data-baseweb="base-input"], [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
-            background-color: #F4F4F5 !important; 
-            border: 1px solid #D1D1D6 !important; 
-            border-radius: 6px !important;
-            box-shadow: none !important; 
-            transition: border-color 0.15s ease; 
+        /* Input Clean-up - Forced Light Mode for Inputs */
+        [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
+            background-color: #F5F5F7 !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important;
+            box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; 
         }
-        [data-baseweb="input"], [data-baseweb="select"] > div { height: 38px !important; }
         [data-baseweb="textarea"] > div { height: auto !important; }
-        [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #111111 !important; }
-        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { 
-            background-color: transparent !important; 
-            color: #111111 !important; 
-            -webkit-text-fill-color: #111111 !important;
-            font-size: 13px !important; 
-            padding: 8px 12px !important; 
-            line-height: 1.4 !important; 
-        }
+        [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #007AFF !important; box-shadow: 0 0 0 1px #007AFF !important; }
+        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; -webkit-text-fill-color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
+        [data-baseweb="input"] input::placeholder, [data-baseweb="textarea"] textarea::placeholder { color: #888888 !important; -webkit-text-fill-color: #888888 !important; }
         
         /* TOGGLE SWITCH (RED/GREEN) */
         div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
@@ -1331,8 +1321,7 @@ elif st.session_state.get("youtube_creds") is None:
                 <div class="tier-feature"><span>✓</span> Single creator account</div>
                 """, unsafe_allow_html=True)
                 
-                # COLLAPSIBLE HOW-TO API KEY GUIDE
-                st.markdown("""
+                details_guide = """
                 <details class="api-guide">
                     <summary>📖 How to get your Google API key</summary>
                     <ol>
@@ -1343,30 +1332,37 @@ elif st.session_state.get("youtube_creds") is None:
                         <li>Once verified, click <strong>Connect YouTube</strong> to start!</li>
                     </ol>
                 </details>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(details_guide, unsafe_allow_html=True)
 
-                user_api_key = st.text_input("API Key", type="password", placeholder="Paste Gemini API Key here", label_visibility="collapsed")
+                user_api_key = st.text_input("API Key", type="password", placeholder="Paste Gemini API Key here...", label_visibility="collapsed")
                 
                 if st.button("🤖 Test AI Connection", use_container_width=True, key="free_btn"):
-                    if not user_api_key or user_api_key.strip() == "":
-                        st.error("⚠️ Please paste your Gemini API key first.")
-                    elif not user_api_key.startswith("AIza"):
-                        st.error("⚠️ Invalid API Key format. Gemini keys usually start with 'AIza'.")
+                    if not user_api_key or not user_api_key.strip():
+                        st.markdown("""
+                        <div style="background-color: #FFF8E6; border: 1px solid #FFCC00; color: #995B00; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                            ⚠️ Please paste your Gemini API key first.
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         with st.spinner("Connecting to Gemini..."):
                             try:
-                                client = genai.Client(api_key=user_api_key)
+                                client = genai.Client(api_key=user_api_key.strip())
                                 response = client.models.generate_content(
                                     model="gemini-3.5-flash-lite", 
                                     contents="Say hello in 3 words."
                                 )
-                                st.success("✅ Connection established! Click on 'Connect YouTube' below to proceed.")
-                            except Exception as e:
-                                error_msg = str(e).lower()
-                                if "api_key_invalid" in error_msg or "400" in error_msg or "unauthorized" in error_msg:
-                                    st.error("❌ Wrong API Key. Please verify and try again.")
-                                else:
-                                    st.error(f"❌ Connection failed. Please try again later.")
+                                st.markdown("""
+                                <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                                    ✓ Connection established! Click on Connect YouTube below.
+                                </div>
+                                """, unsafe_allow_html=True)
+                            except Exception:
+                                st.markdown("""
+                                <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                                    🛑 Invalid API key. Please check your key and try again.
+                                </div>
+                                """, unsafe_allow_html=True)
             
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1399,11 +1395,23 @@ elif st.session_state.get("youtube_creds") is None:
                                     model="gemini-3.5-flash-lite", 
                                     contents="Say hello in 3 words."
                                 )
-                                st.success("✅ Master AI connection established! Click on 'Connect YouTube' below to proceed.")
+                                st.markdown("""
+                                <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                                    ✓ Master AI active! Click on Connect YouTube below.
+                                </div>
+                                """, unsafe_allow_html=True)
                             except Exception:
-                                st.error("❌ Master system error. Please try again.")
+                                st.markdown("""
+                                <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                                    🛑 Master system error. Please check backend configuration.
+                                </div>
+                                """, unsafe_allow_html=True)
                     else:
-                        st.error("❌ Configuration missing. Master key not found.")
+                        st.markdown("""
+                        <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
+                            🛑 Configuration missing.
+                        </div>
+                        """, unsafe_allow_html=True)
             
             st.markdown(f'''
             <div class="pricing-bottom-zone">
