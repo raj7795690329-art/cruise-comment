@@ -1510,6 +1510,7 @@ elif st.session_state.get("youtube_creds") is None:
                             <li>Click <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
                             <li>Under <strong>Authorized redirect URIs</strong>, paste the link from the Redirect URI box below.</li>
                             <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
+                            <li><strong style="color: #D70015;">⚠️ Save your keys:</strong> Please save your Client ID and Secret in a secure document! If you clear your cache or log out, you will need to re-enter them here.</li>
                         </ol>
                     </div>
                 </details>
@@ -1551,7 +1552,7 @@ elif st.session_state.get("youtube_creds") is None:
                         free_oauth_error = str(e)
 
                 if free_auth_url != "#":
-                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
                     auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID, Secret, and Redirect URI first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
@@ -1626,7 +1627,7 @@ elif st.session_state.get("youtube_creds") is None:
                     pass
 
             if pro_auth_url != "#":
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
