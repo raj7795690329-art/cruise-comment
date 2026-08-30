@@ -1179,7 +1179,7 @@ Output ONLY the reply text."""
                                             
                                             # Using a real, high-speed model
                                             response = client.models.generate_content(
-                                                model="gemini-1.5-flash-latest", 
+                                                model="gemini-2.5-flash", 
                                                 contents=prompt
                                             )
                                             st.session_state["ai_drafts"][comment_id] = response.text.strip()
@@ -1280,7 +1280,7 @@ Criteria:
 Output ONLY the reply text."""
 
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash-latest", 
+                    model="gemini-2.5-flash", 
                     contents=prompt
                 )
                 final_reply = response.text.strip()
@@ -1434,7 +1434,7 @@ elif st.session_state.get("youtube_creds") is None:
                             try:
                                 client = genai.Client(api_key=user_api_key.strip())
                                 response = client.models.generate_content(
-                                    model="gemini-1.5-flash-latest", 
+                                    model="gemini-2.5-flash", 
                                     contents="Say hello in 3 words."
                                 )
                                 st.markdown("""
@@ -1477,7 +1477,7 @@ elif st.session_state.get("youtube_creds") is None:
                             try:
                                 client = genai.Client(api_key=MASTER_API_KEY)
                                 response = client.models.generate_content(
-                                    model="gemini-1.5-flash-latest", 
+                                    model="gemini-2.5-flash", 
                                     contents="Say hello in 3 words."
                                 )
                                 st.markdown("""
