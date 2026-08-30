@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -12,20 +13,21 @@ import streamlit.components.v1 as components
 load_dotenv()
 
 def get_secret(key, default=None):
+    val = None
     if key in os.environ and os.environ[key]:
-        return os.environ[key]
-    try:
-        if key in st.secrets and st.secrets[key]:
-            return st.secrets[key]
-    except Exception:
-        pass
-    return default
+        val = os.environ[key]
+    elif key in st.secrets and st.secrets[key]:
+        val = st.secrets[key]
+        
+    # Ignore placeholder text if user forgot to remove it from secrets
+    if val and "your_actual" in val.lower():
+        return default
+    return val or default
 
 # Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
-MASTER_REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app")
 
 # Hardcoded Live App URL so users never have to guess or type it
 APP_URL = "https://cruise-comment-ai.streamlit.app"
@@ -450,7 +452,7 @@ st.markdown("""
         /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; cursor: not-allowed; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
 
         /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
@@ -484,68 +486,54 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle OAuth Callback ---
+# --- Handle OAuth Callback Using Cryptographic State Map ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
-    code = query_params["code"]
+    code = query_params.get("code")
+    state = query_params.get("state")
     try:
-        # 1. Recover keys from memory if they survived
-        active_cid = st.session_state.get("user_client_id")
-        active_sec = st.session_state.get("user_client_secret")
-        active_ruri = st.session_state.get("user_redirect_uri")
+        # Load the specific user's OAuth keys linked to this exact state token
+        state_data = None
+        if os.path.exists(".oauth_states.json"):
+            with open(".oauth_states.json", "r") as f:
+                states = json.load(f)
+            state_data = states.get(state)
         
-        # 2. If memory was wiped by the redirect, pull from temporary hidden file
-        if (not active_cid or not active_sec or not active_ruri) and os.path.exists(".oauth_temp"):
-            with open(".oauth_temp", "r") as f:
-                lines = f.read().splitlines()
-                if len(lines) >= 3:
-                    active_cid = lines[0]
-                    active_sec = lines[1]
-                    active_ruri = lines[2]
-                    
-        # 3. Final fallback to Pro Tier master keys
-        if not active_cid: active_cid = MASTER_CLIENT_ID
-        if not active_sec: active_sec = MASTER_CLIENT_SECRET
-        if not active_ruri: active_ruri = MASTER_REDIRECT_URI
-        
-        client_config = {
-            "web": {
-                "client_id": active_cid,
-                "client_secret": active_sec,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
+        if not state_data:
+            st.error("Connection expired or mismatch. Please return home and click Connect YouTube again.")
+        else:
+            client_config = {
+                "web": {
+                    "client_id": state_data["client_id"],
+                    "client_secret": state_data["client_secret"],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                }
             }
-        }
-        flow = Flow.from_client_config(
-            client_config,
-            scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-            redirect_uri=active_ruri
-        )
-        if os.path.exists(".verifier"):
-            with open(".verifier", "r") as f:
-                flow.code_verifier = f.read().strip()
-        elif st.session_state.get("saved_code_verifier") is not None:
-            flow.code_verifier = st.session_state["saved_code_verifier"]
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
+                redirect_uri=state_data["redirect_uri"]
+            )
+            flow.code_verifier = state_data["verifier"]
+            flow.fetch_token(code=code)
+            credentials = flow.credentials
             
-        flow.fetch_token(code=code)
-        credentials = flow.credentials
-        st.session_state["youtube_creds"] = {
-            "token": credentials.token,
-            "refresh_token": credentials.refresh_token,
-            "token_uri": credentials.token_uri,
-            "client_id": credentials.client_id,
-            "client_secret": credentials.client_secret,
-            "scopes": credentials.scopes
-        }
-        
-        # Clean up temporary redirect files
-        if os.path.exists(".verifier"):
-            os.remove(".verifier")
-        if os.path.exists(".oauth_temp"):
-            os.remove(".oauth_temp")
+            st.session_state["youtube_creds"] = {
+                "token": credentials.token,
+                "refresh_token": credentials.refresh_token,
+                "token_uri": credentials.token_uri,
+                "client_id": credentials.client_id,
+                "client_secret": credentials.client_secret,
+                "scopes": credentials.scopes
+            }
             
-        st.query_params.clear()
-        st.rerun()
+            # Clean up the state tracking file to keep the server clean
+            if os.path.exists(".oauth_states.json"):
+                os.remove(".oauth_states.json")
+                
+            st.query_params.clear()
+            st.rerun()
     except Exception as e:
         st.error(f"Connection failed: {e}")
 
@@ -1541,12 +1529,12 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
-                # --- DYNAMIC YOUTUBE OAUTH INPUTS (NO REDIRECT URI INPUT) ---
+                # --- DYNAMIC YOUTUBE OAUTH INPUTS ---
                 with st.form("oauth_fallback_form"):
                     ui_cid = st.text_input("Google Client ID", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
                     ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
                     
-                    # Bring back the Redirect URI input so users can make a 1:1 match if they need to
+                    # Redirect URI hidden internally but used for exact match verification
                     ui_red = st.text_input("Redirect URI", value=st.session_state.get("user_redirect_uri", APP_URL), placeholder="Must match Google Cloud exactly")
                     
                     submitted = st.form_submit_button("💾 Save Credentials (Click Here First)", use_container_width=True, type="primary")
@@ -1580,24 +1568,38 @@ elif st.session_state.get("youtube_creds") is None:
                             redirect_uri=ruri
                         )
                         # Added offline access type to guarantee stable token issuing
-                        free_auth_url, _ = flow.authorization_url(
+                        free_auth_url, state_token = flow.authorization_url(
                             prompt='consent', 
                             access_type='offline',
                             include_granted_scopes='true'
                         )
                         
-                        # Save the verifier and credentials locally so they survive the redirect!
+                        # Save the verifier and credentials mapped exactly to this state token!
                         st.session_state["saved_code_verifier"] = flow.code_verifier
-                        with open(".verifier", "w") as f:
-                            f.write(flow.code_verifier)
-                        with open(".oauth_temp", "w") as f:
-                            f.write(f"{cid}\n{csec}\n{ruri}")
+                        
+                        states = {}
+                        if os.path.exists(".oauth_states.json"):
+                            try:
+                                with open(".oauth_states.json", "r") as f:
+                                    states = json.load(f)
+                            except: pass
+                            
+                        states[state_token] = {
+                            "client_id": cid,
+                            "client_secret": csec,
+                            "redirect_uri": ruri,
+                            "verifier": flow.code_verifier
+                        }
+                        
+                        with open(".oauth_states.json", "w") as f:
+                            json.dump(states, f)
+                            
                     except Exception as e:
                         free_oauth_error = str(e)
 
                 if free_auth_url != "#":
-                    # target="_blank" securely breaks out of the Streamlit iframe sandbox
-                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    # target="_top" securely breaks out of the Streamlit iframe sandbox
+                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
                     auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Action Required: Please click the Save Credentials button above first!\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
@@ -1667,21 +1669,33 @@ elif st.session_state.get("youtube_creds") is None:
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
                         redirect_uri=APP_URL
                     )
-                    pro_auth_url, _ = flow.authorization_url(
+                    pro_auth_url, state_token = flow.authorization_url(
                         prompt='consent', 
                         access_type='offline',
                         include_granted_scopes='true'
                     )
                     
-                    with open(".verifier", "w") as f:
-                        f.write(flow.code_verifier)
-                    with open(".oauth_temp", "w") as f:
-                        f.write(f"{MASTER_CLIENT_ID}\n{MASTER_CLIENT_SECRET}\n{MASTER_REDIRECT_URI}")
+                    states = {}
+                    if os.path.exists(".oauth_states.json"):
+                        try:
+                            with open(".oauth_states.json", "r") as f:
+                                states = json.load(f)
+                        except: pass
+                        
+                    states[state_token] = {
+                        "client_id": MASTER_CLIENT_ID,
+                        "client_secret": MASTER_CLIENT_SECRET,
+                        "redirect_uri": APP_URL,
+                        "verifier": flow.code_verifier
+                    }
+                    
+                    with open(".oauth_states.json", "w") as f:
+                        json.dump(states, f)
                 except Exception:
                     pass
 
             if pro_auth_url != "#":
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
