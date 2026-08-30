@@ -25,7 +25,9 @@ def get_secret(key, default=None):
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
-MASTER_REDIRECT_URI = get_secret("REDIRECT_URI", "http://localhost:8501")
+
+# Hardcoded Live App URL so users never have to guess or type it
+APP_URL = "https://cruise-comment-ai.streamlit.app"
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -57,7 +59,6 @@ defaults = {
     "user_gemini_api_key": None,
     "user_client_id": "",
     "user_client_secret": "",
-    "user_redirect_uri": "https://cruise-comment-a.streamlit.app",
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -489,7 +490,6 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         # Fallback to defaults if session inputs are lost during redirect
         active_cid = st.session_state.get("user_client_id") or MASTER_CLIENT_ID
         active_sec = st.session_state.get("user_client_secret") or MASTER_CLIENT_SECRET
-        active_ruri = st.session_state.get("user_redirect_uri") or MASTER_REDIRECT_URI
         
         client_config = {
             "web": {
@@ -502,7 +502,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow = Flow.from_client_config(
             client_config,
             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-            redirect_uri=active_ruri
+            redirect_uri=APP_URL
         )
         if os.path.exists(".verifier"):
             with open(".verifier", "r") as f:
@@ -1501,35 +1501,42 @@ elif st.session_state.get("youtube_creds") is None:
                                 </div>
                                 """, unsafe_allow_html=True)
                                 
-                details_oauth_guide = """
-                <details class="api-guide-main" style="margin-top: 14px;">
-                    <summary>🎥 How to setup YouTube Connection</summary>
+                details_oauth_guide = f"""
+                <details class="api-guide-main" style="margin-top: 14px; border-color: #FFCC00; background-color: #FFF8E6;">
+                    <summary style="color: #995B00;">🎥 How to setup YouTube Connection</summary>
                     <div class="guide-toggle-box">
                         <ol style="color: #555;">
                             <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > Credentials.</li>
                             <li>Click <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
-                            <li>Under <strong>Authorized redirect URIs</strong>, paste the link from the Redirect URI box below.</li>
+                            <li>Under <strong>Authorized redirect URIs</strong>, copy and paste this exact link:<br>
+                                <code style="background:#EAEAEA; padding:4px 8px; border-radius:4px; color:#D70015; font-weight:bold; display:inline-block; margin-top:4px;">{APP_URL}</code>
+                            </li>
                             <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
-                            <li><strong style="color: #D70015;">⚠️ Save your keys:</strong> Please save your Client ID and Secret in a secure document! If you clear your cache or log out, you will need to re-enter them here.</li>
+                            <li><strong style="color: #D70015;">⚠️ Save your keys:</strong> Please save your Client ID and Secret in a secure document! If you clear your browser cache, you will need to re-enter them here.</li>
                         </ol>
                     </div>
                 </details>
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
-                # --- DYNAMIC YOUTUBE OAUTH INPUTS ---
-                st.text_input("Google Client ID", key="user_client_id", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
-                st.text_input("Google Client Secret", key="user_client_secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
-                st.text_input("Redirect URI", key="user_redirect_uri", placeholder="Redirect URI (e.g. https://cruise-comment-a.streamlit.app)", label_visibility="collapsed")
+                # --- DYNAMIC YOUTUBE OAUTH INPUTS (NO REDIRECT URI INPUT) ---
+                with st.form("oauth_fallback_form"):
+                    ui_cid = st.text_input("Google Client ID", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
+                    ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
+                    submitted = st.form_submit_button("Save Credentials", use_container_width=True)
+                    
+                    if submitted:
+                        st.session_state["user_client_id"] = ui_cid.strip()
+                        st.session_state["user_client_secret"] = ui_sec.strip()
+                        st.rerun()
             
                 # Generate Free Tier Auth URL dynamically based on frontend inputs
                 free_auth_url = "#"
                 free_oauth_error = ""
                 cid = st.session_state.get("user_client_id", "").strip()
                 csec = st.session_state.get("user_client_secret", "").strip()
-                ruri = st.session_state.get("user_redirect_uri", "").strip()
                 
-                if cid and csec and ruri:
+                if cid and csec:
                     try:
                         client_config = {
                             "web": {
@@ -1542,7 +1549,7 @@ elif st.session_state.get("youtube_creds") is None:
                         flow = Flow.from_client_config(
                             client_config, 
                             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
-                            redirect_uri=ruri
+                            redirect_uri=APP_URL
                         )
                         free_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
                         st.session_state["saved_code_verifier"] = flow.code_verifier
@@ -1555,7 +1562,7 @@ elif st.session_state.get("youtube_creds") is None:
                     auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
-                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID, Secret, and Redirect URI first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID and Secret first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1620,7 +1627,7 @@ elif st.session_state.get("youtube_creds") is None:
                     flow = Flow.from_client_config(
                         client_config,
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-                        redirect_uri=MASTER_REDIRECT_URI
+                        redirect_uri=APP_URL
                     )
                     pro_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
                 except Exception:
