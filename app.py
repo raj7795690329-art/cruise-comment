@@ -25,9 +25,7 @@ def get_secret(key, default=None):
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
-
-# Hardcoded Live App URL so users never have to guess or type it
-APP_URL = "https://cruise-comment-ai.streamlit.app"
+MASTER_REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app")
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -59,6 +57,7 @@ defaults = {
     "user_gemini_api_key": None,
     "user_client_id": "",
     "user_client_secret": "",
+    "user_redirect_uri": "https://cruise-comment-ai.streamlit.app",
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -490,18 +489,21 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         # 1. Recover keys from memory if they survived
         active_cid = st.session_state.get("user_client_id")
         active_sec = st.session_state.get("user_client_secret")
+        active_ruri = st.session_state.get("user_redirect_uri")
         
         # 2. If memory was wiped by the redirect, pull from temporary hidden file
-        if (not active_cid or not active_sec) and os.path.exists(".oauth_temp"):
+        if (not active_cid or not active_sec or not active_ruri) and os.path.exists(".oauth_temp"):
             with open(".oauth_temp", "r") as f:
                 lines = f.read().splitlines()
-                if len(lines) >= 2:
+                if len(lines) >= 3:
                     active_cid = lines[0]
                     active_sec = lines[1]
+                    active_ruri = lines[2]
                     
         # 3. Final fallback to Pro Tier master keys
         if not active_cid: active_cid = MASTER_CLIENT_ID
         if not active_sec: active_sec = MASTER_CLIENT_SECRET
+        if not active_ruri: active_ruri = MASTER_REDIRECT_URI
         
         client_config = {
             "web": {
@@ -514,7 +516,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow = Flow.from_client_config(
             client_config,
             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-            redirect_uri=APP_URL
+            redirect_uri=active_ruri
         )
         if os.path.exists(".verifier"):
             with open(".verifier", "r") as f:
@@ -1540,11 +1542,16 @@ elif st.session_state.get("youtube_creds") is None:
                 with st.form("oauth_fallback_form"):
                     ui_cid = st.text_input("Google Client ID", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
                     ui_sec = st.text_input("Google Client Secret", type="password", placeholder="Client Secret", label_visibility="collapsed")
+                    
+                    # Bring back the Redirect URI input so users can make a 1:1 match if they need to
+                    ui_red = st.text_input("Redirect URI", value=st.session_state.get("user_redirect_uri", APP_URL), placeholder="Must match Google Cloud exactly")
+                    
                     submitted = st.form_submit_button("Save Credentials", use_container_width=True)
                     
                     if submitted:
                         st.session_state["user_client_id"] = ui_cid.strip()
                         st.session_state["user_client_secret"] = ui_sec.strip()
+                        st.session_state["user_redirect_uri"] = ui_red.strip()
                         st.rerun()
             
                 # Generate Free Tier Auth URL dynamically based on frontend inputs
@@ -1552,6 +1559,7 @@ elif st.session_state.get("youtube_creds") is None:
                 free_oauth_error = ""
                 cid = st.session_state.get("user_client_id", "").strip()
                 csec = st.session_state.get("user_client_secret", "").strip()
+                ruri = st.session_state.get("user_redirect_uri", APP_URL).strip()
                 
                 if cid and csec:
                     try:
@@ -1566,24 +1574,30 @@ elif st.session_state.get("youtube_creds") is None:
                         flow = Flow.from_client_config(
                             client_config, 
                             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
-                            redirect_uri=APP_URL
+                            redirect_uri=ruri
                         )
-                        free_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
+                        # Added offline access type to guarantee stable token issuing
+                        free_auth_url, _ = flow.authorization_url(
+                            prompt='consent', 
+                            access_type='offline',
+                            include_granted_scopes='true'
+                        )
                         
                         # Save the verifier and credentials locally so they survive the redirect!
                         st.session_state["saved_code_verifier"] = flow.code_verifier
                         with open(".verifier", "w") as f:
                             f.write(flow.code_verifier)
                         with open(".oauth_temp", "w") as f:
-                            f.write(f"{cid}\n{csec}")
+                            f.write(f"{cid}\n{csec}\n{ruri}")
                     except Exception as e:
                         free_oauth_error = str(e)
 
                 if free_auth_url != "#":
-                    auth_link_html = f'<a href="{free_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    # target="_top" securely breaks out of the Streamlit iframe sandbox
+                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
-                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID and Secret first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID, Secret, and Redirect URI first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1648,19 +1662,23 @@ elif st.session_state.get("youtube_creds") is None:
                     flow = Flow.from_client_config(
                         client_config,
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-                        redirect_uri=APP_URL
+                        redirect_uri=MASTER_REDIRECT_URI
                     )
-                    pro_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
+                    pro_auth_url, _ = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
                     
                     with open(".verifier", "w") as f:
                         f.write(flow.code_verifier)
                     with open(".oauth_temp", "w") as f:
-                        f.write(f"{MASTER_CLIENT_ID}\n{MASTER_CLIENT_SECRET}")
+                        f.write(f"{MASTER_CLIENT_ID}\n{MASTER_CLIENT_SECRET}\n{MASTER_REDIRECT_URI}")
                 except Exception:
                     pass
 
             if pro_auth_url != "#":
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
