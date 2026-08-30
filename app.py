@@ -1442,10 +1442,10 @@ elif st.session_state.get("youtube_creds") is None:
                                     ✓ Connection established! Click on Connect YouTube below.
                                 </div>
                                 """, unsafe_allow_html=True)
-                            except Exception:
-                                st.markdown("""
+                            except Exception as e:
+                                st.markdown(f"""
                                 <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    🛑 Invalid API key. Please check your key and try again.
+                                    🛑 <b>Google SDK Error:</b> {str(e)}
                                 </div>
                                 """, unsafe_allow_html=True)
             
@@ -1485,10 +1485,10 @@ elif st.session_state.get("youtube_creds") is None:
                                     ✓ Master AI active! Click on Connect YouTube below.
                                 </div>
                                 """, unsafe_allow_html=True)
-                            except Exception:
-                                st.markdown("""
+                            except Exception as e:
+                                st.markdown(f"""
                                 <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    🛑 Master system error. Please check backend configuration.
+                                    🛑 <b>Master system error:</b> {str(e)}
                                 </div>
                                 """, unsafe_allow_html=True)
                     else:
