@@ -487,9 +487,21 @@ query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params["code"]
     try:
-        # Fallback to defaults if session inputs are lost during redirect
-        active_cid = st.session_state.get("user_client_id") or MASTER_CLIENT_ID
-        active_sec = st.session_state.get("user_client_secret") or MASTER_CLIENT_SECRET
+        # 1. Recover keys from memory if they survived
+        active_cid = st.session_state.get("user_client_id")
+        active_sec = st.session_state.get("user_client_secret")
+        
+        # 2. If memory was wiped by the redirect, pull from temporary hidden file
+        if (not active_cid or not active_sec) and os.path.exists(".oauth_temp"):
+            with open(".oauth_temp", "r") as f:
+                lines = f.read().splitlines()
+                if len(lines) >= 2:
+                    active_cid = lines[0]
+                    active_sec = lines[1]
+                    
+        # 3. Final fallback to Pro Tier master keys
+        if not active_cid: active_cid = MASTER_CLIENT_ID
+        if not active_sec: active_sec = MASTER_CLIENT_SECRET
         
         client_config = {
             "web": {
@@ -520,8 +532,13 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             "client_secret": credentials.client_secret,
             "scopes": credentials.scopes
         }
+        
+        # Clean up temporary redirect files
         if os.path.exists(".verifier"):
             os.remove(".verifier")
+        if os.path.exists(".oauth_temp"):
+            os.remove(".oauth_temp")
+            
         st.query_params.clear()
         st.rerun()
     except Exception as e:
@@ -1552,14 +1569,18 @@ elif st.session_state.get("youtube_creds") is None:
                             redirect_uri=APP_URL
                         )
                         free_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
+                        
+                        # Save the verifier and credentials locally so they survive the redirect!
                         st.session_state["saved_code_verifier"] = flow.code_verifier
                         with open(".verifier", "w") as f:
                             f.write(flow.code_verifier)
+                        with open(".oauth_temp", "w") as f:
+                            f.write(f"{cid}\n{csec}")
                     except Exception as e:
                         free_oauth_error = str(e)
 
                 if free_auth_url != "#":
-                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'<a href="{free_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
                     auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID and Secret first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
@@ -1630,11 +1651,16 @@ elif st.session_state.get("youtube_creds") is None:
                         redirect_uri=APP_URL
                     )
                     pro_auth_url, _ = flow.authorization_url(prompt='consent', include_granted_scopes='true')
+                    
+                    with open(".verifier", "w") as f:
+                        f.write(flow.code_verifier)
+                    with open(".oauth_temp", "w") as f:
+                        f.write(f"{MASTER_CLIENT_ID}\n{MASTER_CLIENT_SECRET}")
                 except Exception:
                     pass
 
             if pro_auth_url != "#":
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
