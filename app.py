@@ -1033,12 +1033,14 @@ if st.session_state.get("youtube_creds") is not None:
 
                 if comment_id in handled_set:
                     sent_text = st.session_state.get("sent_replies_log", {}).get(comment_id, "Previously replied on YouTube.")
+                    vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Video")
                     
                     with st.container():
                         st.markdown(f"""
                             <div class="handled-card">
                                 <div style="display: flex; justify-content: space-between; gap: 20px; align-items: flex-start;">
                                     <div style="flex: 1;">
+                                        <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📺 {vid_title}</div>
                                         <div class="comment-header">
                                             <span class="comment-author">{author}</span>
                                             <span class="comment-date">{formatted_date}</span>
@@ -1060,16 +1062,22 @@ if st.session_state.get("youtube_creds") is not None:
                     continue
                 
                 with st.container(border=True):
-                    st.button(
-                        f"▶ Filter to this Video", 
-                        key=f"vt_pending_{comment_id}", 
-                        help="Filter_Video_Btn",
-                        on_click=set_video_filter,
-                        args=(target_option,)
-                    )
+                    vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Video")
+                    
+                    v_col1, v_col2 = st.columns([5, 2], vertical_alignment="center")
+                    with v_col1:
+                        st.markdown(f"<div style='font-size: 14px; font-weight: 600; color: #333; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title=\"{vid_title}\">📺 {vid_title}</div>", unsafe_allow_html=True)
+                    with v_col2:
+                        st.button(
+                            f"▶ Filter to this Video", 
+                            key=f"vt_pending_{comment_id}", 
+                            help="Filter_Video_Btn",
+                            on_click=set_video_filter,
+                            args=(target_option,)
+                        )
                     
                     st.markdown(f"""
-                        <div class="comment-header" style="margin-top: 8px;">
+                        <div class="comment-header" style="margin-top: 4px;">
                             <span class="comment-author">{author}</span>
                             <span class="comment-date">{formatted_date}</span>
                             <span class="comment-relative">({relative_time})</span>
@@ -1130,15 +1138,16 @@ if st.session_state.get("youtube_creds") is not None:
                                             chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                             
                                             single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
-                                            single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")
+                                            # Truncate description to 800 characters to prevent Token Overload / slow generation
+                                            single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
 
                                             ambient_prompt_section = ""
                                             ambient_rule = ""
                                             if st.session_state.get("global_ai_mode") == "Deep Context":
                                                 ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
-                                                ambient_text = "\n- ".join(ambient_comments[:100]) if ambient_comments else "No other comments available."
-                                                ambient_prompt_section = f"\nAudience Sentiment (Read the Room):\nHere are other recent comments on this exact video. Use this to understand the general mood, inside jokes, or ongoing debates. Do NOT reply to these.\n{ambient_text}\n"
-                                                ambient_rule = "7. Ambient Context: Keep the running jokes or context from the 'Audience Sentiment' in mind, but ONLY reply to the TARGET COMMENT."
+                                                ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments available."
+                                                ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
+                                                ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
 
                                             length_instruction = ""
                                             if chosen_length == "Small":
@@ -1168,14 +1177,15 @@ Criteria:
 
 Output ONLY the reply text."""
                                             
+                                            # Using a real, high-speed model
                                             response = client.models.generate_content(
-                                                model="gemini-3.5-flash-lite", 
+                                                model="gemini-1.5-flash", 
                                                 contents=prompt
                                             )
                                             st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                             st.rerun()
-                                        except Exception:
-                                            st.error("Service unavailable.")
+                                        except Exception as e:
+                                            st.error(f"Service unavailable: {e}")
                                 else:
                                     st.error("System configuration missing.")
                         with ca_mood:
@@ -1223,6 +1233,76 @@ Output ONLY the reply text."""
             </div>
             """, unsafe_allow_html=True)
 
+        # --- THE MISSING ENGINE: PROCESS THE AUTO-REPLY QUEUE ---
+        if is_replying_active and not st.session_state.get("auto_reply_paused"):
+            current_item = st.session_state["auto_reply_queue"][0]
+            comment_id = current_item["id"]
+            video_id = current_item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
+            text = current_item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+            
+            try:
+                client = genai.Client(api_key=MASTER_API_KEY)
+                active_context = st.session_state.get("saved_channel_context", "General vlogging") 
+                chosen_mood = st.session_state["global_mood"]
+                chosen_length = st.session_state["global_length"]
+                
+                single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
+                single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
+
+                ambient_prompt_section = ""
+                ambient_rule = ""
+                if st.session_state.get("global_ai_mode") == "Deep Context":
+                    ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
+                    ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments."
+                    ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
+                    ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
+
+                length_instruction = "Provide a standard response."
+                if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence or emojis."
+                elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
+
+                prompt = f"""You are a professional YouTube creator responding to viewer comments.
+Your channel's specific niche and style: {active_context}
+
+Context about the video:
+- Title: {single_vid_title}
+- Description: {single_vid_desc}
+{ambient_prompt_section}
+TARGET COMMENT TO REPLY TO: "{text}"
+
+Criteria:
+1. Tone: {chosen_mood.upper()}. Authentic.
+2. Length: {length_instruction}
+3. Do not ask questions automatically.
+4. NEVER use the dash/hyphen symbol (-).
+{ambient_rule}
+
+Output ONLY the reply text."""
+
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash", 
+                    contents=prompt
+                )
+                final_reply = response.text.strip()
+                
+                youtube.comments().insert(
+                    part="snippet",
+                    body={"snippet": {"parentId": comment_id, "textOriginal": final_reply}}
+                ).execute()
+                
+                st.session_state["replied_comments"].add(comment_id)
+                st.session_state["sent_replies_log"][comment_id] = final_reply
+                st.session_state["auto_reply_success"] += 1
+
+            except Exception as e:
+                print(f"Auto-reply error: {e}")
+            
+            # Pop the queue so it actually moves to the next comment
+            st.session_state["auto_reply_queue"].pop(0)
+            time.sleep(1) # Safety delay to prevent YouTube API bans
+            st.rerun()
+
+        # --- AUTOPILOT ---
         if st.session_state.get("autopilot_active") and not st.session_state.get("auto_reply_queue") and not st.session_state.get("auto_reply_paused"):
             next_run = st.session_state.get("autopilot_next_run", 0)
             
@@ -1354,7 +1434,7 @@ elif st.session_state.get("youtube_creds") is None:
                             try:
                                 client = genai.Client(api_key=user_api_key.strip())
                                 response = client.models.generate_content(
-                                    model="gemini-3.5-flash-lite", 
+                                    model="gemini-1.5-flash", 
                                     contents="Say hello in 3 words."
                                 )
                                 st.markdown("""
@@ -1397,7 +1477,7 @@ elif st.session_state.get("youtube_creds") is None:
                             try:
                                 client = genai.Client(api_key=MASTER_API_KEY)
                                 response = client.models.generate_content(
-                                    model="gemini-3.5-flash-lite", 
+                                    model="gemini-1.5-flash", 
                                     contents="Say hello in 3 words."
                                 )
                                 st.markdown("""
