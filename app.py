@@ -20,7 +20,12 @@ REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501")
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # --- Page Config ---
-st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_state="expanded")
+st.set_page_config(
+    layout="wide", 
+    page_title="Cruise Comment", 
+    page_icon="ChatGPT Image Aug 26, 2026, 11_48_10 PM.png",
+    initial_sidebar_state="expanded"
+)
 
 # --- Persistent Context Storage ---
 CONTEXT_FILE = ".cruise_context"
