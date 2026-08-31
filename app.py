@@ -1,8 +1,6 @@
 import streamlit as st
 import os
 import json
-import base64
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -23,12 +21,10 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
-    # Ignore placeholder text if user forgot to remove it
     if val and "your_actual" in str(val).lower():
         return default
     return val or default
 
-# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
@@ -46,9 +42,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Persistent Local Storage for Keys & Context ---
+# --- Persistent Local Storage for Keys, Tokens & Context ---
 CONTEXT_FILE = ".cruise_context"
 KEYS_FILE = ".cruise_keys.json"
+TOKENS_FILE = ".youtube_tokens.json"
 
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
@@ -78,7 +75,7 @@ def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
     with open(KEYS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-# --- Initialize ALL Session States Safely ---
+# --- Initialize Session States ---
 defaults = {
     "youtube_creds": None,
     "channel_id": None,           
@@ -114,6 +111,14 @@ for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
+# Load Persisted Session Tokens so Refresh Doesn't Log User Out
+if st.session_state["youtube_creds"] is None and os.path.exists(TOKENS_FILE):
+    try:
+        with open(TOKENS_FILE, "r", encoding="utf-8") as f:
+            st.session_state["youtube_creds"] = json.load(f)
+    except Exception:
+        pass
+
 def get_relative_time(dt):
     now = datetime.now(timezone.utc)
     if dt.tzinfo is None:
@@ -133,7 +138,7 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Minimal CSS for layout spacing only (Native components handle colors automatically)
+# Minimal layout styling
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
@@ -157,14 +162,13 @@ st.markdown("""
         .hero-outer.left { top: 24px !important; } .hero-far.left { top: -16px !important; } .hero-side.left { top: 12px !important; }
         .hero-main { top: 0px !important; } .hero-side.right { top: -12px !important; } .hero-far.right { top: 16px !important; } .hero-outer.right{ top: -24px !important; }
         
-        /* Anchor Action Links */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
         .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle Stateless PKCE OAuth Callback ---
+# --- Handle OAuth Callback ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
@@ -194,9 +198,9 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        if "::" in str(state_param):
-            _, verifier = str(state_param).split("::", 1)
-            flow.code_verifier = verifier
+        # Recover verifier from state parameter or local file
+        if state_param:
+            flow.code_verifier = str(state_param)
         elif os.path.exists(".verifier"):
             with open(".verifier", "r", encoding="utf-8") as f:
                 flow.code_verifier = f.read().strip()
@@ -204,7 +208,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow.fetch_token(code=code)
         credentials = flow.credentials
         
-        st.session_state["youtube_creds"] = {
+        creds_dict = {
             "token": credentials.token,
             "refresh_token": credentials.refresh_token,
             "token_uri": credentials.token_uri,
@@ -212,6 +216,12 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             "client_secret": credentials.client_secret,
             "scopes": credentials.scopes
         }
+        
+        st.session_state["youtube_creds"] = creds_dict
+        
+        # Save tokens securely to survive page refreshes
+        with open(TOKENS_FILE, "w", encoding="utf-8") as f:
+            json.dump(creds_dict, f)
         
         if os.path.exists(".verifier"):
             os.remove(".verifier")
@@ -358,6 +368,8 @@ if st.session_state.get("youtube_creds") is not None:
         
         if st.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
+            if os.path.exists(TOKENS_FILE):
+                os.remove(TOKENS_FILE)
             st.rerun()
             
         st.divider()
@@ -470,7 +482,7 @@ if st.session_state.get("youtube_creds") is not None:
         st.session_state["video_mapping_cache"] = video_mapping
         current_selection = st.session_state.get("selected_video_filter", all_videos_label)
         
-        # Ensure fallback dropdown syncs properly
+        # Ensure dropdown syncs accurately
         current_base = current_selection.split("] ")[1] if "] " in current_selection else current_selection
         matched_opt = all_videos_label
         for opt in video_options:
@@ -506,7 +518,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["global_ai_mode"] = "Standard" if is_enhanced else "Deep Context"
                 st.rerun()
         with col_l:
-            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5) # Default is "All" (index 5)
+            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5)
 
         display_comments = live_comments
         active_filter = st.session_state["selected_video_filter"]
@@ -660,7 +672,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.success(f"✓ Handled: {sent_text}")
                         with cols[1]:
                             if video_id: st.image(f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg", use_container_width=True)
-                    continue
+                    continue 
                 
                 with st.container(border=True):
                     
@@ -752,8 +764,8 @@ Output ONLY the reply text."""
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
-                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
-                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
+                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}")
+                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}")
                     
                     st.caption("Manual Override")
                     st.text_area("Manual Reply", placeholder="Write a personal response...", height=60, label_visibility="collapsed", key=f"text_{comment_id}")
@@ -880,12 +892,8 @@ Output ONLY the reply text."""
 
 elif st.session_state.get("youtube_creds") is None:
     
-    st.markdown("""
-    <div class="system-header">
-        <h1 class="main-title">Cruise Comment</h1>
-        <p class="sub-title">Your audience engagement, on cruise control.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.title("Cruise Comment")
+    st.caption("Your audience engagement, on cruise control.")
     
     st.markdown("""
         <div class="hero-gallery">
@@ -917,220 +925,160 @@ elif st.session_state.get("youtube_creds") is None:
 
     with c1:
         with st.container(border=True):
-            st.markdown('<div class="pricing-card-marker"></div>', unsafe_allow_html=True)
+            st.subheader("Free Tier")
+            st.markdown("""
+            * ✓ Requires your own Gemini API key
+            * ✓ Full control over usage and limits
+            * ✓ Standard comment automation
+            * ✓ Single creator account
+            """)
             
-            with st.container(): 
-                st.markdown('<div class="section-title">Free Tier</div>', unsafe_allow_html=True)
-                st.markdown("""
-                <div class="tier-feature"><span>✓</span> Requires your own Gemini API key</div>
-                <div class="tier-feature"><span>✓</span> Full control over usage and limits</div>
-                <div class="tier-feature"><span>✓</span> Standard comment automation</div>
-                <div class="tier-feature"><span>✓</span> Single creator account</div>
-                """, unsafe_allow_html=True)
-                
-                details_guide = """
-                <details class="api-guide-main">
-                    <summary>📖 How to get your Google API key (AI Studio)</summary>
-                    <div class="guide-toggle-box">
-                        <details class="sub-guide">
-                            <summary>🆕 New User (Create an API Key)</summary>
-                            <ol>
-                                <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> and sign in.</li>
-                                <li>Click the blue <strong>Create API key</strong> button in the top-right.</li>
-                                <li>Select <strong>Default Gemini Project</strong> from the dropdown and click <strong>Create</strong>.</li>
-                                <li>Click the <strong>Copy icon</strong> to copy your new key.</li>
-                                <li>Paste your key into the box below and click <strong>Test AI Connection</strong>.</li>
-                            </ol>
-                        </details>
-                        <details class="sub-guide">
-                            <summary>🔑 Existing User (Find your API Key)</summary>
-                            <ol>
-                                <li>Go directly to <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio API Keys</a>.</li>
-                                <li>In the table under <strong>API Keys</strong>, locate your active project key.</li>
-                                <li>Click the <strong>Copy icon</strong> next to your key.</li>
-                                <li>Paste your key into the box below and click <strong>Test AI Connection</strong>.</li>
-                            </ol>
-                        </details>
-                    </div>
-                </details>
-                """
-                st.markdown(details_guide, unsafe_allow_html=True)
+            details_guide = """
+            <details style="margin-bottom: 12px; font-size: 13px;">
+                <summary>📖 How to get your Google API key (AI Studio)</summary>
+                <ol style="margin-top: 8px;">
+                    <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> and sign in.</li>
+                    <li>Click <strong>Create API key</strong> and select <strong>Default Gemini Project</strong>.</li>
+                    <li>Copy your key and paste it below.</li>
+                </ol>
+            </details>
+            """
+            st.markdown(details_guide, unsafe_allow_html=True)
 
-                st.write("**Gemini API Key**")
-                user_api_key = st.text_input(
-                    "Gemini API Key", 
-                    value=saved_keys.get("api_key", st.session_state.get("user_gemini_api_key", "")), 
-                    type="password", 
-                    placeholder="Paste Gemini API Key here...", 
-                    label_visibility="collapsed",
-                    key="free_tier_api_key_input"
-                )
-                if user_api_key != st.session_state.get("user_gemini_api_key", ""):
-                    st.session_state["user_gemini_api_key"] = user_api_key
-                    update_persisted_keys(api_key=user_api_key)
-                
-                if st.button("🤖 Test AI Connection", use_container_width=True, key="free_btn"):
-                    if not user_api_key or not user_api_key.strip():
-                        st.markdown("""
-                        <div style="background-color: #FFF8E6; border: 1px solid #FFCC00; color: #995B00; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                            ⚠️ Please paste your Gemini API key first.
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        with st.spinner("Connecting to Gemini..."):
-                            try:
-                                client = genai.Client(api_key=user_api_key.strip())
-                                response = client.models.generate_content(
-                                    model="gemini-3.6-flash", 
-                                    contents="Say hello in 3 words."
-                                )
-                                st.session_state["user_gemini_api_key"] = user_api_key.strip()
-                                update_persisted_keys(api_key=user_api_key.strip())
-                                st.markdown("""
-                                <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    ✓ Connection established! Proceed to YouTube Connection.
-                                </div>
-                                """, unsafe_allow_html=True)
-                            except Exception as e:
-                                st.markdown(f"""
-                                <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    🛑 <b>Google SDK Error:</b> {str(e)}
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                details_oauth_guide = f"""
-                <details class="api-guide-main" style="margin-top: 14px; border-color: #FFCC00; background-color: #FFF8E6;">
-                    <summary style="color: #995B00;">🎥 How to setup YouTube Connection</summary>
-                    <div class="guide-toggle-box">
-                        <ol style="color: #555;">
-                            <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > OAuth consent screen.</li>
-                            <li>Set User Type to External and click <strong>Publish App</strong> (moves it from Testing to In Production).</li>
-                            <li>Go to <strong>Credentials</strong> > <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
-                            <li>Under <strong>Authorized redirect URIs</strong>, copy and paste this exact link:<br>
-                                <code style="background:#EAEAEA; padding:4px 8px; border-radius:4px; color:#D70015; font-weight:bold; display:inline-block; margin-top:4px;">{APP_URL}</code>
-                            </li>
-                            <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
-                        </ol>
-                    </div>
-                </details>
-                """
-                st.markdown(details_oauth_guide, unsafe_allow_html=True)
-
-                st.write("**Google Client ID**")
-                ui_cid = st.text_input(
-                    "Google Client ID", 
-                    value=saved_keys.get("client_id", st.session_state.get("user_client_id", "")), 
-                    placeholder="Client ID (ends in .apps.googleusercontent.com)", 
-                    label_visibility="collapsed",
-                    key="ui_cid_input"
-                )
-                
-                st.write("**Google Client Secret**")
-                ui_sec = st.text_input(
-                    "Google Client Secret", 
-                    value=saved_keys.get("client_secret", st.session_state.get("user_client_secret", "")), 
-                    type="password", 
-                    placeholder="Client Secret", 
-                    label_visibility="collapsed",
-                    key="ui_sec_input"
-                )
-                
-                if ui_cid != st.session_state.get("user_client_id", "") or ui_sec != st.session_state.get("user_client_secret", ""):
-                    st.session_state["user_client_id"] = ui_cid
-                    st.session_state["user_client_secret"] = ui_sec
-                    update_persisted_keys(client_id=ui_cid, client_secret=ui_sec)
+            user_api_key = st.text_input(
+                "Gemini API Key", 
+                value=saved_keys.get("api_key", st.session_state.get("user_gemini_api_key", "")), 
+                type="password", 
+                placeholder="Paste Gemini API Key here...", 
+                key="free_tier_api_key_input"
+            )
+            if user_api_key != st.session_state.get("user_gemini_api_key", ""):
+                st.session_state["user_gemini_api_key"] = user_api_key
+                update_persisted_keys(api_key=user_api_key)
             
-                free_auth_url = None
-                free_oauth_error = ""
-                cid = ui_cid.strip()
-                csec = ui_sec.strip()
-                
-                if cid and csec:
-                    try:
-                        client_config = {
-                            "web": {
-                                "client_id": cid,
-                                "client_secret": csec,
-                                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                                "token_uri": "https://oauth2.googleapis.com/token",
-                            }
-                        }
-                        flow = Flow.from_client_config(
-                            client_config, 
-                            scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
-                            redirect_uri=APP_URL
-                        )
-                        free_auth_url, state_token = flow.authorization_url(
-                            prompt='consent', 
-                            access_type='offline',
-                            include_granted_scopes='true'
-                        )
-                        
-                        # Stateless Packing: Encrypt the verifier into the URL state to bypass Streamlit amnesia entirely
-                        state_pack = f"{state_token}::{flow.code_verifier}"
-                        parsed = urlparse(free_auth_url)
-                        qs = parse_qs(parsed.query)
-                        qs['state'] = [state_pack]
-                        free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
-                        
-                    except Exception as e:
-                        free_oauth_error = str(e)
-
-                if free_auth_url:
-                    auth_link_html = f'<a href="{free_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+            if st.button("🤖 Test AI Connection", use_container_width=True, key="free_btn"):
+                if not user_api_key or not user_api_key.strip():
+                    st.warning("Please paste your Gemini API key first.")
                 else:
-                    msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
-                    auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
+                    with st.spinner("Connecting to Gemini..."):
+                        try:
+                            client = genai.Client(api_key=user_api_key.strip())
+                            response = client.models.generate_content(
+                                model="gemini-3.6-flash", 
+                                contents="Say hello in 3 words."
+                            )
+                            st.session_state["user_gemini_api_key"] = user_api_key.strip()
+                            update_persisted_keys(api_key=user_api_key.strip())
+                            st.success("✓ Connection established! Proceed to YouTube Connection.")
+                        except Exception as e:
+                            st.error(f"Google SDK Error: {str(e)}")
+                            
+            details_oauth_guide = f"""
+            <details style="margin-top: 14px; margin-bottom: 12px; font-size: 13px;">
+                <summary>🎥 How to setup YouTube Connection</summary>
+                <ol style="margin-top: 8px;">
+                    <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > OAuth consent screen.</li>
+                    <li>Set User Type to External and click <strong>Publish App</strong>.</li>
+                    <li>Go to <strong>Credentials</strong> > <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
+                    <li>Under <strong>Authorized redirect URIs</strong>, copy and paste this exact link:<br>
+                        <code>{APP_URL}</code>
+                    </li>
+                    <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
+                </ol>
+            </details>
+            """
+            st.markdown(details_oauth_guide, unsafe_allow_html=True)
+
+            ui_cid = st.text_input(
+                "Google Client ID", 
+                value=saved_keys.get("client_id", st.session_state.get("user_client_id", "")), 
+                placeholder="Client ID (ends in .apps.googleusercontent.com)", 
+                key="ui_cid_input"
+            )
+            ui_sec = st.text_input(
+                "Google Client Secret", 
+                value=saved_keys.get("client_secret", st.session_state.get("user_client_secret", "")), 
+                type="password", 
+                placeholder="Client Secret", 
+                key="ui_sec_input"
+            )
+            
+            if ui_cid != st.session_state.get("user_client_id", "") or ui_sec != st.session_state.get("user_client_secret", ""):
+                st.session_state["user_client_id"] = ui_cid
+                st.session_state["user_client_secret"] = ui_sec
+                update_persisted_keys(client_id=ui_cid, client_secret=ui_sec)
+        
+            free_auth_url = None
+            free_oauth_error = ""
+            cid = ui_cid.strip()
+            csec = ui_sec.strip()
+            
+            if cid and csec:
+                try:
+                    client_config = {
+                        "web": {
+                            "client_id": cid,
+                            "client_secret": csec,
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                        }
+                    }
+                    flow = Flow.from_client_config(
+                        client_config, 
+                        scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
+                        redirect_uri=APP_URL
+                    )
+                    
+                    with open(".verifier", "w", encoding="utf-8") as f:
+                        f.write(flow.code_verifier)
+                        
+                    free_auth_url, _ = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true',
+                        state=flow.code_verifier
+                    )
+                except Exception as e:
+                    free_oauth_error = str(e)
+
+            if free_auth_url:
+                auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+            else:
+                msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
+                auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
 
             st.markdown(f'''
-            <div class="pricing-bottom-zone">
-                <div class="bottom-action-group">
-                    {auth_link_html}
-                    <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
-                </div>
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+                {auth_link_html}
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
 
     with c2:
         with st.container(border=True):
-            st.markdown('<div class="pricing-card-marker"></div>', unsafe_allow_html=True)
+            st.subheader("Pro Tier")
+            st.markdown("""
+            * ✓ No API key required
+            * ✓ Powered by Master AI engine
+            * ✓ 100% free during the Beta
+            * ✓ Single creator account
+            """)
             
-            with st.container(): 
-                st.markdown('<div class="section-title">Pro Tier</div>', unsafe_allow_html=True)
-                st.markdown("""
-                <div class="tier-feature"><span>✓</span> No API key required</div>
-                <div class="tier-feature"><span>✓</span> Powered by Master AI engine</div>
-                <div class="tier-feature"><span>✓</span> 100% free during the Beta</div>
-                <div class="tier-feature"><span>✓</span> Single creator account</div>
-                """, unsafe_allow_html=True)
-                
-                if st.button("🤖 Test AI Connection", use_container_width=True, key="pro_btn"):
-                    if MASTER_API_KEY:
-                        with st.spinner("Connecting to Master Engine..."):
-                            try:
-                                client = genai.Client(api_key=MASTER_API_KEY)
-                                response = client.models.generate_content(
-                                    model="gemini-3.6-flash", 
-                                    contents="Say hello in 3 words."
-                                )
-                                st.markdown("""
-                                <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    ✓ Master AI active! Click on Connect YouTube below.
-                                </div>
-                                """, unsafe_allow_html=True)
-                            except Exception as e:
-                                st.markdown(f"""
-                                <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                                    🛑 <b>Master system error:</b> {str(e)}
-                                </div>
-                                """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div style="background-color: #FFF0F0; border: 1px solid #FF3B30; color: #D70015; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
-                            🛑 Master API key missing in environment/secrets.
-                        </div>
-                        """, unsafe_allow_html=True)
-            
+            if st.button("🤖 Test AI Connection", use_container_width=True, key="pro_btn"):
+                if MASTER_API_KEY:
+                    with st.spinner("Connecting to Master Engine..."):
+                        try:
+                            client = genai.Client(api_key=MASTER_API_KEY)
+                            response = client.models.generate_content(
+                                model="gemini-3.6-flash", 
+                                contents="Say hello in 3 words."
+                            )
+                            st.success("✓ Master AI active! Click on Connect YouTube below.")
+                        except Exception as e:
+                            st.error(f"Master system error: {str(e)}")
+                else:
+                    st.error("Master API key missing in environment/secrets.")
+        
             pro_auth_url = None
             if MASTER_CLIENT_ID and MASTER_CLIENT_SECRET:
                 try:
@@ -1147,52 +1095,43 @@ elif st.session_state.get("youtube_creds") is None:
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
                         redirect_uri=APP_URL
                     )
-                    pro_auth_url, state_token = flow.authorization_url(
+                    
+                    with open(".verifier", "w", encoding="utf-8") as f:
+                        f.write(flow.code_verifier)
+                        
+                    pro_auth_url, _ = flow.authorization_url(
                         prompt='consent', 
                         access_type='offline',
-                        include_granted_scopes='true'
+                        include_granted_scopes='true',
+                        state=flow.code_verifier
                     )
-                    
-                    # Stateless Packing: Encrypt the verifier into the URL state
-                    state_pack = f"{state_token}::{flow.code_verifier}"
-                    parsed = urlparse(pro_auth_url)
-                    qs = parse_qs(parsed.query)
-                    qs['state'] = [state_pack]
-                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
                 except Exception:
                     pass
 
             if pro_auth_url:
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>'
             else:
-                pro_auth_link = f'<a href="#" target="_self" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>'
 
             st.markdown(f'''
-            <div class="pricing-bottom-zone">
-                <div class="bottom-action-group">
-                    {pro_auth_link}
-                    <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
-                </div>
+            <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+                {pro_auth_link}
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
     with c3:
         with st.container(border=True):
-            st.markdown('<div class="pricing-card-marker"></div>', unsafe_allow_html=True)
+            st.subheader("Talent Manager")
+            st.markdown("""
+            * ✓ Connect multiple creator accounts
+            * ✓ Centralized engagement dashboard
+            * ✓ Handle cross-platform DMs & mentions
+            * ✓ Advanced analytics & team permissions
+            """)
             
-            with st.container(): 
-                st.markdown('<div class="section-title">Talent Manager</div>', unsafe_allow_html=True)
-                st.markdown("""
-                <div class="tier-feature"><span>✓</span> Connect multiple creator accounts</div>
-                <div class="tier-feature"><span>✓</span> Centralized engagement dashboard</div>
-                <div class="tier-feature"><span>✓</span> Handle cross-platform DMs & mentions</div>
-                <div class="tier-feature"><span>✓</span> Advanced analytics & team permissions</div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown(f'''
-            <div class="pricing-bottom-zone">
-                <div class="bottom-action-group">
-                    <a href="#" target="_blank" class="auth-btn disabled-btn">Initialize Agency Engine <span class="beta-tag">BETA</span></a>
-                </div>
+            st.markdown('''
+            <div style="margin-top: 16px;">
+                <a href="#" target="_blank" class="auth-btn disabled-btn">Initialize Agency Engine <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
