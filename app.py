@@ -23,7 +23,6 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
-    # Ignore placeholder text if user forgot to remove it
     if val and "your_actual" in str(val).lower():
         return default
     return val or default
@@ -46,9 +45,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Persistent Local Storage for Keys & Context ---
+# --- Persistent Local Storage for Keys, Tokens & Context ---
 CONTEXT_FILE = ".cruise_context"
 KEYS_FILE = ".cruise_keys.json"
+TOKENS_FILE = ".youtube_tokens.json"
 
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
@@ -98,7 +98,7 @@ defaults = {
     "global_ai_mode": "Standard", 
     "video_title_cache": {},
     "video_desc_cache": {},
-    "selected_video_filter": "All Videos",
+    "selected_video_filter": "[0] All Videos",
     "video_mapping_cache": {},
     "channel_comments": [],
     "master_comments_cache": [],
@@ -113,6 +113,14 @@ defaults = {
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# Load Persisted Session Tokens so Refresh Doesn't Log User Out
+if st.session_state["youtube_creds"] is None and os.path.exists(TOKENS_FILE):
+    try:
+        with open(TOKENS_FILE, "r", encoding="utf-8") as f:
+            st.session_state["youtube_creds"] = json.load(f)
+    except Exception:
+        pass
 
 def get_relative_time(dt):
     now = datetime.now(timezone.utc)
@@ -204,7 +212,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow.fetch_token(code=code)
         credentials = flow.credentials
         
-        st.session_state["youtube_creds"] = {
+        creds_dict = {
             "token": credentials.token,
             "refresh_token": credentials.refresh_token,
             "token_uri": credentials.token_uri,
@@ -212,6 +220,12 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             "client_secret": credentials.client_secret,
             "scopes": credentials.scopes
         }
+        
+        st.session_state["youtube_creds"] = creds_dict
+        
+        # Save tokens securely to survive page refreshes
+        with open(TOKENS_FILE, "w", encoding="utf-8") as f:
+            json.dump(creds_dict, f)
         
         if os.path.exists(".verifier"):
             os.remove(".verifier")
@@ -260,8 +274,8 @@ if st.session_state.get("youtube_creds") is not None:
                 target_vid = None
                 selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
                 
-                if "  [" in selected_filter_title:
-                    clean_filter_title = selected_filter_title.split("  [")[0].strip()
+                if "] " in selected_filter_title:
+                    clean_filter_title = selected_filter_title.split("] ")[1].strip()
                 else:
                     clean_filter_title = selected_filter_title
 
@@ -324,8 +338,8 @@ if st.session_state.get("youtube_creds") is not None:
             target_vid = None
             selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
             
-            if "  [" in selected_filter_title:
-                clean_filter_title = selected_filter_title.split("  [")[0].strip()
+            if "] " in selected_filter_title:
+                clean_filter_title = selected_filter_title.split("] ")[1].strip()
             else:
                 clean_filter_title = selected_filter_title
 
@@ -358,6 +372,8 @@ if st.session_state.get("youtube_creds") is not None:
         
         if st.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
+            if os.path.exists(TOKENS_FILE):
+                os.remove(TOKENS_FILE)
             st.rerun()
             
         st.divider()
@@ -452,8 +468,8 @@ if st.session_state.get("youtube_creds") is not None:
 
         sorted_vids = sorted(unique_video_ids, key=lambda v: video_unresponded_counts[v], reverse=True)
         total_pending_all = len([c for c in all_comments_for_dropdown if c["id"] not in handled_set])
-        all_videos_label = f"All Videos  [{total_pending_all} pending]"
-
+        
+        all_videos_label = f"[{total_pending_all}] All Videos"
         video_options = [all_videos_label]
         video_mapping[all_videos_label] = None
 
@@ -461,19 +477,21 @@ if st.session_state.get("youtube_creds") is not None:
             base_title = st.session_state["video_title_cache"].get(vid, f"Video {vid}")
             count = video_unresponded_counts[vid]
             short_title = base_title[:19].strip() + "..." if len(base_title) > 22 else base_title
-            display_title = f"{short_title}  [{count} pending]"
-            if display_title in video_mapping: display_title = f"{short_title} (2)  [{count} pending]"
+            
+            display_title = f"[{count}] {short_title}"
+            if display_title in video_mapping: display_title = f"[{count}] {short_title} (2)"
             video_options.append(display_title)
             video_mapping[display_title] = vid
 
         st.session_state["video_mapping_cache"] = video_mapping
-
         current_selection = st.session_state.get("selected_video_filter", all_videos_label)
         
-        current_base = current_selection.split("  [")[0] if "  [" in current_selection else current_selection
+        # Ensure fallback dropdown syncs properly
+        current_base = current_selection.split("] ")[1] if "] " in current_selection else current_selection
         matched_opt = all_videos_label
         for opt in video_options:
-            if opt.startswith(current_base):
+            opt_base = opt.split("] ")[1] if "] " in opt else opt
+            if current_base == opt_base:
                 matched_opt = opt
                 break
                 
@@ -562,10 +580,15 @@ if st.session_state.get("youtube_creds") is not None:
                                 st.session_state["auto_reply_queue"] = []
                                 st.session_state["auto_reply_total"] = 0
                                 st.session_state["auto_reply_paused"] = False
-                            # Only the Cancel button gets the "primary" accent color so it appears RED 
                             st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
                 else:
-                    st.button("✅ Completed", disabled=True, use_container_width=True)
+                    c1, c2 = st.columns([7, 3])
+                    c1.button("✅ Completed", disabled=True, use_container_width=True)
+                    def clear_completed():
+                        st.session_state["auto_reply_queue"] = []
+                        st.session_state["auto_reply_total"] = 0
+                        st.session_state["auto_reply_paused"] = False
+                    c2.button("❌", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         elif st.session_state.get("autopilot_active"):
             st.divider()
@@ -598,7 +621,7 @@ if st.session_state.get("youtube_creds") is not None:
         if is_replying_active and not st.session_state.get("auto_reply_paused"):
             processing_id = st.session_state["auto_reply_queue"][0]["id"]
 
-        is_all_videos = current_selection.startswith("All Videos")
+        is_all_videos = "All Videos" in current_selection
 
         if live_comments:
             for item in display_comments:
@@ -623,7 +646,6 @@ if st.session_state.get("youtube_creds") is not None:
                 
                 if comment_id == processing_id:
                     with st.container(border=True):
-                        # Invisible HTML anchor used by the JS to scroll securely to this exact container
                         st.markdown(f'<div id="processing-card-{comment_id}"></div>', unsafe_allow_html=True)
                         st.warning("⏳ **CRUISING... DRAFTING REPLY**")
                         st.markdown(f"**{author}** • {formatted_date}")
@@ -951,11 +973,10 @@ elif st.session_state.get("youtube_creds") is None:
                 st.markdown(details_guide, unsafe_allow_html=True)
 
                 user_api_key = st.text_input(
-                    "API Key", 
+                    "Gemini API Key", 
                     value=saved_keys.get("api_key", st.session_state.get("user_gemini_api_key", "")), 
                     type="password", 
                     placeholder="Paste Gemini API Key here...", 
-                    label_visibility="collapsed",
                     key="free_tier_api_key_input"
                 )
                 if user_api_key != st.session_state.get("user_gemini_api_key", ""):
@@ -1012,7 +1033,6 @@ elif st.session_state.get("youtube_creds") is None:
                     "Google Client ID", 
                     value=saved_keys.get("client_id", st.session_state.get("user_client_id", "")), 
                     placeholder="Client ID (ends in .apps.googleusercontent.com)", 
-                    label_visibility="collapsed",
                     key="ui_cid_input"
                 )
                 ui_sec = st.text_input(
@@ -1020,7 +1040,6 @@ elif st.session_state.get("youtube_creds") is None:
                     value=saved_keys.get("client_secret", st.session_state.get("user_client_secret", "")), 
                     type="password", 
                     placeholder="Client Secret", 
-                    label_visibility="collapsed",
                     key="ui_sec_input"
                 )
                 
@@ -1049,18 +1068,24 @@ elif st.session_state.get("youtube_creds") is None:
                             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
                             redirect_uri=APP_URL
                         )
-                        free_auth_url, _ = flow.authorization_url(
+                        free_auth_url, state_token = flow.authorization_url(
                             prompt='consent', 
                             access_type='offline',
                             include_granted_scopes='true'
                         )
-                        with open(".verifier", "w", encoding="utf-8") as f:
-                            f.write(flow.code_verifier)
+                        
+                        # Stateless Packing: Encrypt the verifier into the URL state to bypass Streamlit amnesia entirely
+                        state_pack = f"{state_token}::{flow.code_verifier}"
+                        parsed = urlparse(free_auth_url)
+                        qs = parse_qs(parsed.query)
+                        qs['state'] = [state_pack]
+                        free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                        
                     except Exception as e:
                         free_oauth_error = str(e)
 
                 if free_auth_url:
-                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'<a href="{free_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
                     auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
@@ -1130,20 +1155,25 @@ elif st.session_state.get("youtube_creds") is None:
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
                         redirect_uri=APP_URL
                     )
-                    pro_auth_url, _ = flow.authorization_url(
+                    pro_auth_url, state_token = flow.authorization_url(
                         prompt='consent', 
                         access_type='offline',
                         include_granted_scopes='true'
                     )
-                    with open(".verifier", "w", encoding="utf-8") as f:
-                        f.write(flow.code_verifier)
+                    
+                    # Stateless Packing: Encrypt the verifier into the URL state
+                    state_pack = f"{state_token}::{flow.code_verifier}"
+                    parsed = urlparse(pro_auth_url)
+                    qs = parse_qs(parsed.query)
+                    qs['state'] = [state_pack]
+                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
                 except Exception:
                     pass
 
             if pro_auth_url:
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_self" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
-                pro_auth_link = f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="#" target="_self" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
