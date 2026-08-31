@@ -672,7 +672,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.success(f"✓ Handled: {sent_text}")
                         with cols[1]:
                             if video_id: st.image(f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg", use_container_width=True)
-                    continue 
+                    continue
                 
                 with st.container(border=True):
                     
@@ -764,8 +764,8 @@ Output ONLY the reply text."""
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
-                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}")
-                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}")
+                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
+                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
                     st.caption("Manual Override")
                     st.text_area("Manual Reply", placeholder="Write a personal response...", height=60, label_visibility="collapsed", key=f"text_{comment_id}")
