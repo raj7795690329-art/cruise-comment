@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import json
 import base64
-from urllib.parse import quote
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -49,6 +49,7 @@ st.set_page_config(
 CONTEXT_FILE = ".cruise_context"
 KEYS_FILE = ".cruise_keys.json"
 TOKENS_FILE = ".youtube_tokens.json"
+VERIFIERS_FILE = ".oauth_verifiers.json"
 
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
@@ -78,7 +79,27 @@ def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
     with open(KEYS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-# --- Initialize ALL Session States Safely ---
+def save_verifier(state, verifier):
+    data = {}
+    if os.path.exists(VERIFIERS_FILE):
+        try:
+            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except: pass
+    data[state] = verifier
+    with open(VERIFIERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def get_verifier(state):
+    if os.path.exists(VERIFIERS_FILE):
+        try:
+            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get(state)
+        except: pass
+    return None
+
+# --- Initialize Session States ---
 defaults = {
     "youtube_creds": None,
     "channel_id": None,           
@@ -141,7 +162,7 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Minimal CSS for layout spacing only
+# Minimal layout styling
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
@@ -171,7 +192,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle Stateless PKCE OAuth Callback ---
+# --- Handle OAuth Callback ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
@@ -201,18 +222,13 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        # Safely decode the payload to extract the PKCE Verifier
+        # Recover verifier securely from the background dictionary based on the Google State token
         if state_param:
-            try:
-                padded_state = state_param + '=' * (4 - len(state_param) % 4)
-                decoded_state = base64.urlsafe_b64decode(padded_state).decode('utf-8')
-                if "::" in decoded_state:
-                    _, verifier = decoded_state.split("::", 1)
-                    flow.code_verifier = verifier
-            except Exception:
-                pass
-        
-        # Fallback to local file if the state param was missing
+            verifier = get_verifier(str(state_param))
+            if verifier:
+                flow.code_verifier = verifier
+                
+        # Fallback to single file if dictionary lookup misses
         if not hasattr(flow, 'code_verifier') or not flow.code_verifier:
             if os.path.exists(".verifier"):
                 with open(".verifier", "r", encoding="utf-8") as f:
@@ -232,12 +248,10 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         
         st.session_state["youtube_creds"] = creds_dict
         
+        # Save tokens securely to survive page refreshes
         with open(TOKENS_FILE, "w", encoding="utf-8") as f:
             json.dump(creds_dict, f)
         
-        if os.path.exists(".verifier"):
-            os.remove(".verifier")
-            
         st.query_params.clear()
         st.rerun()
     except Exception as e:
@@ -596,7 +610,7 @@ if st.session_state.get("youtube_creds") is not None:
                         st.session_state["auto_reply_queue"] = []
                         st.session_state["auto_reply_total"] = 0
                         st.session_state["auto_reply_paused"] = False
-                    c2.button("❌ Close", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+                    c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         elif st.session_state.get("autopilot_active"):
             st.divider()
@@ -1047,12 +1061,7 @@ elif st.session_state.get("youtube_creds") is None:
                         include_granted_scopes='true'
                     )
                     
-                    with open(".verifier", "w", encoding="utf-8") as f:
-                        f.write(flow.code_verifier)
-                        
-                    # Safely encode the custom state without rebuilding the entire URL
-                    safe_pack = base64.urlsafe_b64encode(f"{state_token}::{flow.code_verifier}".encode()).decode().rstrip('=')
-                    free_auth_url = free_auth_url.replace(f"state={state_token}", f"state={safe_pack}")
+                    save_verifier(state_token, flow.code_verifier)
                     
                 except Exception as e:
                     free_oauth_error = str(e)
@@ -1118,12 +1127,7 @@ elif st.session_state.get("youtube_creds") is None:
                         include_granted_scopes='true'
                     )
                     
-                    with open(".verifier", "w", encoding="utf-8") as f:
-                        f.write(flow.code_verifier)
-                        
-                    # Safely encode the custom state without rebuilding the entire URL
-                    safe_pack = base64.urlsafe_b64encode(f"{state_token}::{flow.code_verifier}".encode()).decode().rstrip('=')
-                    pro_auth_url = pro_auth_url.replace(f"state={state_token}", f"state={safe_pack}")
+                    save_verifier(state_token, flow.code_verifier)
                     
                 except Exception:
                     pass
