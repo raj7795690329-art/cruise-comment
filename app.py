@@ -511,21 +511,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle Stateless PKCE OAuth Callback ---
+# --- Handle OAuth Callback with Persistent Keys ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
-    state_param = query_params.get("state", "")
-    
     if isinstance(code, list): code = code[0]
-    if isinstance(state_param, list): state_param = state_param[0]
     
     try:
         active_cid = saved_keys.get("client_id") or st.session_state.get("user_client_id") or MASTER_CLIENT_ID
         active_sec = saved_keys.get("client_secret") or st.session_state.get("user_client_secret") or MASTER_CLIENT_SECRET
         
         if not active_cid or not active_sec:
-            raise ValueError("Google Client ID or Client Secret missing. Please re-enter them in the Setup panel.")
+            raise ValueError("Google Client ID or Client Secret missing. Please re-enter them.")
             
         client_config = {
             "web": {
@@ -541,11 +538,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        # EXTRACT STATELESS VERIFIER
-        if "::" in str(state_param):
-            _, verifier = str(state_param).split("::", 1)
-            flow.code_verifier = verifier
-        elif os.path.exists(".verifier"):
+        if os.path.exists(".verifier"):
             with open(".verifier", "r", encoding="utf-8") as f:
                 flow.code_verifier = f.read().strip()
                 
@@ -727,7 +720,7 @@ if st.session_state.get("youtube_creds") is not None:
         
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
         st.markdown("<div class='sb-header'>INSTAGRAM</div>", unsafe_allow_html=True)
-        st.markdown(f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
         st.markdown("</div><div class='sb-divider'></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
@@ -1621,7 +1614,7 @@ elif st.session_state.get("youtube_creds") is None:
                         free_oauth_error = str(e)
 
                 if free_auth_url:
-                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
                     auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
@@ -1702,7 +1695,7 @@ elif st.session_state.get("youtube_creds") is None:
                     pass
 
             if pro_auth_url:
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
