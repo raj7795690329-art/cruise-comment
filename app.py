@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import json
+import base64
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
@@ -22,15 +23,17 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
+    # Ignore placeholder text if user forgot to remove it
     if val and "your_actual" in str(val).lower():
         return default
     return val or default
 
+# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
 
-# Hardcoded Live App URL for YouTube OAuth
+# Hardcoded Live App URL so users never have to guess or type it
 APP_URL = "https://cruise-comment-ai.streamlit.app"
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -415,69 +418,21 @@ st.markdown("""
         [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #007AFF !important; box-shadow: 0 0 0 1px #007AFF !important; }
         [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; -webkit-text-fill-color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
         [data-baseweb="input"] input::placeholder, [data-baseweb="textarea"] textarea::placeholder { color: #888888 !important; -webkit-text-fill-color: #888888 !important; }
-        
-        /* TOGGLE SWITCH (RED/GREEN) */
-        div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
-        div[data-testid="stToggle"] input:checked + div { background-color: #34C759 !important; } 
 
-        /* ALL Native Buttons */
-        .stButton > button, [data-testid="baseButton-primary"] {
+        /* ALL Native Primary Buttons */
+        [data-testid="baseButton-primary"] {
             background-color: #3A3A3C !important; color: #FFFFFF !important; border: 1px solid #3A3A3C !important;
             border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; padding: 6px 12px !important;
             transition: all 0.15s ease !important; min-height: 38px !important; filter: grayscale(100%) contrast(1.2); width: 100% !important;
         }
-        .stButton > button:hover, [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
+        [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
         
-        /* STOP/RESUME BUTTON OVERRIDES */
-        .stop-btn-wrapper .stButton > button { background-color: #FF3B30 !important; border-color: #FF3B30 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-        .stop-btn-wrapper .stButton > button:hover { background-color: #D70015 !important; border-color: #D70015 !important; }
-        
-        .resume-btn-wrapper .stButton > button { background-color: #34C759 !important; border-color: #34C759 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-        .resume-btn-wrapper .stButton > button:hover { background-color: #248A3D !important; border-color: #248A3D !important; }
-        
-        .completed-btn-wrapper .stButton > button { background-color: #F0F0F2 !important; border-color: #E5E5EA !important; color: #888888 !important; pointer-events: none; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-
-        /* Clickable Grey Video Title Box */
-        button[title="Filter_Video_Btn"] {
-            background-color: #F0F0F2 !important;
-            color: #555555 !important;
-            border: 1px solid #EAEAEA !important;
-            border-radius: 6px !important;
-            font-size: 11px !important;
-            font-weight: 600 !important;
-            padding: 4px 10px !important;
-            min-height: 26px !important;
-            width: auto !important;
-            display: inline-flex !important;
-            align-items: center;
-            text-transform: uppercase !important;
-            letter-spacing: 0.04em !important;
-            margin-bottom: 6px !important;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important;
-            transition: all 0.15s ease !important;
-            text-align: left !important;
-        }
-        button[title="Filter_Video_Btn"]:hover {
-            background-color: #E5E5EA !important;
-            color: #111111 !important;
-            border-color: #D1D1D6 !important;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-        }
-        button[title="Filter_Video_Btn"] p {
-            font-size: 11px !important;
-            font-weight: 600 !important;
-            color: inherit !important;
-            margin: 0 !important;
-        }
-
-        [data-testid="stSidebar"] .stButton > button { filter: none !important; }
-        [data-testid="stSidebar"] .stButton > button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
+        [data-testid="stSidebar"] button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
         
         /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; cursor: not-allowed; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; cursor: not-allowed; pointer-events: none; }
 
         /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
@@ -511,18 +466,21 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle OAuth Callback with Persistent Keys ---
+# --- Handle Stateless PKCE OAuth Callback ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
+    state_param = query_params.get("state", "")
+    
     if isinstance(code, list): code = code[0]
+    if isinstance(state_param, list): state_param = state_param[0]
     
     try:
         active_cid = saved_keys.get("client_id") or st.session_state.get("user_client_id") or MASTER_CLIENT_ID
         active_sec = saved_keys.get("client_secret") or st.session_state.get("user_client_secret") or MASTER_CLIENT_SECRET
         
         if not active_cid or not active_sec:
-            raise ValueError("Google Client ID or Client Secret missing. Please re-enter them.")
+            raise ValueError("Google Client ID or Client Secret missing. Please re-enter them in the Setup panel.")
             
         client_config = {
             "web": {
@@ -538,7 +496,11 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        if os.path.exists(".verifier"):
+        # EXTRACT STATELESS VERIFIER
+        if "::" in str(state_param):
+            _, verifier = str(state_param).split("::", 1)
+            flow.code_verifier = verifier
+        elif os.path.exists(".verifier"):
             with open(".verifier", "r", encoding="utf-8") as f:
                 flow.code_verifier = f.read().strip()
                 
@@ -720,7 +682,7 @@ if st.session_state.get("youtube_creds") is not None:
         
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
         st.markdown("<div class='sb-header'>INSTAGRAM</div>", unsafe_allow_html=True)
-        st.markdown(f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
         st.markdown("</div><div class='sb-divider'></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
@@ -875,18 +837,17 @@ if st.session_state.get("youtube_creds") is not None:
         st.session_state["video_mapping_cache"] = video_mapping
 
         current_selection = st.session_state.get("selected_video_filter", all_videos_label)
-        if current_selection not in video_options:
-            matched = False
-            if "  [" in current_selection:
-                base_curr = current_selection.rsplit("  [", 1)[0]
-                for opt in video_options:
-                    if opt.startswith(base_curr + "  ["):
-                        current_selection = opt
-                        matched = True
-                        break
-            if not matched:
-                current_selection = all_videos_label
+        
+        # Match purely by the video name so live count updates don't break the filter
+        current_base = current_selection.split("  [")[0] if "  [" in current_selection else current_selection
+        matched_opt = all_videos_label
+        for opt in video_options:
+            opt_base = opt.split("  [")[0] if "  [" in opt else opt
+            if current_base == opt_base:
+                matched_opt = opt
+                break
                 
+        current_selection = matched_opt
         st.session_state["selected_video_filter"] = current_selection
 
         with st.container():
@@ -991,23 +952,29 @@ if st.session_state.get("youtube_creds") is not None:
                     st.markdown(f"<div style='font-size: 16px; font-weight: 600; color: #111; margin-bottom: 8px;'>🚀 Cruising through comments... {done} of {total} sent.</div>", unsafe_allow_html=True)
                     st.progress(done / total if total > 0 else 0.0)
                 with b_col:
-                    c_stop, c_res = st.columns(2)
-                    with c_stop:
-                        if left > 0:
-                            if not st.session_state.get("auto_reply_paused"):
-                                st.markdown('<div class="stop-btn-wrapper">', unsafe_allow_html=True)
-                                st.button("🛑 Stop", key="stop_q_btn", on_click=pause_auto_reply, use_container_width=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
-                    with c_res:
-                        if left > 0:
-                            if st.session_state.get("auto_reply_paused"):
+                    if left > 0:
+                        if not st.session_state.get("auto_reply_paused"):
+                            st.markdown('<div class="stop-btn-wrapper">', unsafe_allow_html=True)
+                            st.button("🛑 Pause", key="stop_q_btn", on_click=pause_auto_reply, use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            c1, c2 = st.columns(2)
+                            with c1:
                                 st.markdown('<div class="resume-btn-wrapper">', unsafe_allow_html=True)
                                 st.button("▶ Resume", key="resume_q_btn", on_click=resume_auto_reply, use_container_width=True)
                                 st.markdown('</div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown('<div class="completed-btn-wrapper">', unsafe_allow_html=True)
-                            st.button("✅ Completed", disabled=True, use_container_width=True)
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            with c2:
+                                def cancel_queue():
+                                    st.session_state["auto_reply_queue"] = []
+                                    st.session_state["auto_reply_total"] = 0
+                                    st.session_state["auto_reply_paused"] = False
+                                st.markdown('<div class="stop-btn-wrapper">', unsafe_allow_html=True)
+                                st.button("❌ Cancel", key="can_q_btn", on_click=cancel_queue, use_container_width=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="completed-btn-wrapper">', unsafe_allow_html=True)
+                        st.button("✅ Completed", disabled=True, use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
 
             elif st.session_state.get("autopilot_active"):
                 st.markdown("<hr style='margin: 16px 0; border: none; border-top: 1px solid #EAEAEA;'>", unsafe_allow_html=True)
@@ -1041,9 +1008,9 @@ if st.session_state.get("youtube_creds") is not None:
                     <script>
                         const buttons = window.parent.document.querySelectorAll('button');
                         buttons.forEach(btn => {
-                            if (btn.innerText.includes('🛑 Stop')) {
-                                btn.style.backgroundColor = '#FF3B30';
-                                btn.style.borderColor = '#FF3B30';
+                            if (btn.innerText.includes('🛑 Pause')) {
+                                btn.style.backgroundColor = '#FF9500';
+                                btn.style.borderColor = '#FF9500';
                                 btn.style.color = '#FFFFFF';
                             }
                             if (btn.innerText.includes('▶ Resume')) {
@@ -1051,21 +1018,15 @@ if st.session_state.get("youtube_creds") is not None:
                                 btn.style.borderColor = '#34C759';
                                 btn.style.color = '#FFFFFF';
                             }
+                            if (btn.innerText.includes('❌ Cancel') || btn.innerText.includes('🛑 Stop Autopilot')) {
+                                btn.style.backgroundColor = '#FF3B30';
+                                btn.style.borderColor = '#FF3B30';
+                                btn.style.color = '#FFFFFF';
+                            }
                             if (btn.innerText.includes('✅ Completed')) {
                                 btn.style.backgroundColor = '#F0F0F2';
                                 btn.style.borderColor = '#E5E5EA';
                                 btn.style.color = '#888888';
-                            }
-                        });
-                        
-                        const toggles = window.parent.document.querySelectorAll('div[data-testid="stToggle"] input[type="checkbox"]');
-                        toggles.forEach(t => {
-                            const track = t.nextElementSibling;
-                            if (track) {
-                                track.style.backgroundColor = t.checked ? '#34C759' : '#FF3B30';
-                                t.addEventListener('change', (e) => {
-                                    track.style.backgroundColor = e.target.checked ? '#34C759' : '#FF3B30';
-                                });
                             }
                         });
                     </script>
@@ -1075,6 +1036,8 @@ if st.session_state.get("youtube_creds") is not None:
         processing_id = None
         if is_replying_active and not st.session_state.get("auto_reply_paused"):
             processing_id = st.session_state["auto_reply_queue"][0]["id"]
+
+        is_all_videos = current_selection.startswith("All Videos")
 
         if live_comments:
             for item in display_comments:
@@ -1128,12 +1091,14 @@ if st.session_state.get("youtube_creds") is not None:
                     sent_text = st.session_state.get("sent_replies_log", {}).get(comment_id, "Previously replied on YouTube.")
                     vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Video")
                     
+                    vid_title_html = f'<div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📺 {vid_title}</div>' if is_all_videos else ''
+
                     with st.container():
                         st.markdown(f"""
                             <div class="handled-card">
                                 <div style="display: flex; justify-content: space-between; gap: 20px; align-items: flex-start;">
                                     <div style="flex: 1;">
-                                        <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📺 {vid_title}</div>
+                                        {vid_title_html}
                                         <div class="comment-header">
                                             <span class="comment-author">{author}</span>
                                             <span class="comment-date">{formatted_date}</span>
@@ -1157,17 +1122,17 @@ if st.session_state.get("youtube_creds") is not None:
                 with st.container(border=True):
                     vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Video")
                     
-                    v_col1, v_col2 = st.columns([5, 2], vertical_alignment="center")
-                    with v_col1:
-                        st.markdown(f"<div style='font-size: 14px; font-weight: 600; color: #333; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title=\"{vid_title}\">📺 {vid_title}</div>", unsafe_allow_html=True)
-                    with v_col2:
-                        st.button(
-                            f"▶ Filter to this Video", 
-                            key=f"vt_pending_{comment_id}", 
-                            help="Filter_Video_Btn",
-                            on_click=set_video_filter,
-                            args=(target_option,)
-                        )
+                    if is_all_videos:
+                        v_col1, v_col2 = st.columns([5, 2], vertical_alignment="center")
+                        with v_col1:
+                            st.markdown(f"<div style='font-size: 14px; font-weight: 600; color: #333; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' title=\"{vid_title}\">📺 {vid_title}</div>", unsafe_allow_html=True)
+                        with v_col2:
+                            st.button(
+                                f"▶ Filter to this Video", 
+                                key=f"vt_pending_{comment_id}", 
+                                on_click=set_video_filter,
+                                args=(target_option,)
+                            )
                     
                     st.markdown(f"""
                         <div class="comment-header" style="margin-top: 4px;">
@@ -1603,13 +1568,19 @@ elif st.session_state.get("youtube_creds") is None:
                             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
                             redirect_uri=APP_URL
                         )
-                        free_auth_url, _ = flow.authorization_url(
+                        free_auth_url, state_token = flow.authorization_url(
                             prompt='consent', 
                             access_type='offline',
                             include_granted_scopes='true'
                         )
-                        with open(".verifier", "w", encoding="utf-8") as f:
-                            f.write(flow.code_verifier)
+                        
+                        # Stateless Packing: Encrypt the verifier into the URL state to bypass Streamlit amnesia entirely
+                        state_pack = f"{state_token}::{flow.code_verifier}"
+                        parsed = urlparse(free_auth_url)
+                        qs = parse_qs(parsed.query)
+                        qs['state'] = [state_pack]
+                        free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                        
                     except Exception as e:
                         free_oauth_error = str(e)
 
@@ -1684,13 +1655,18 @@ elif st.session_state.get("youtube_creds") is None:
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
                         redirect_uri=APP_URL
                     )
-                    pro_auth_url, _ = flow.authorization_url(
+                    pro_auth_url, state_token = flow.authorization_url(
                         prompt='consent', 
                         access_type='offline',
                         include_granted_scopes='true'
                     )
-                    with open(".verifier", "w", encoding="utf-8") as f:
-                        f.write(flow.code_verifier)
+                    
+                    # Stateless Packing: Encrypt the verifier into the URL state
+                    state_pack = f"{state_token}::{flow.code_verifier}"
+                    parsed = urlparse(pro_auth_url)
+                    qs = parse_qs(parsed.query)
+                    qs['state'] = [state_pack]
+                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
                 except Exception:
                     pass
 
