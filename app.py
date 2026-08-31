@@ -139,6 +139,7 @@ def get_relative_time(dt):
 # --- Strict Apple-Inspired Monochromatic Design System ---
 st.markdown("""
     <style>
+        /* Typography & Core Variables */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
         
         .stApp { 
@@ -147,11 +148,13 @@ st.markdown("""
             color: #111111 !important;
         }
 
+        /* Subtle Entrance Animation */
         @keyframes fadeSlideUp {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
+        /* SCROLL FIX */
         .stAppViewContainer, .stMain, .stAppViewBlockContainer {
             overflow: auto !important;
         }
@@ -169,6 +172,7 @@ st.markdown("""
 
         header[data-testid="stHeader"] { display: none; }
         
+        /* FULL COVERAGE STICKY HEADER FIX */
         div[data-testid="stVerticalBlock"] > div:has(.sticky-anchor-container) {
             position: -webkit-sticky !important;
             position: sticky !important;
@@ -182,6 +186,7 @@ st.markdown("""
             width: calc(100% + 4rem) !important;
         }
 
+        /* System Header */
         .system-header {
             margin-bottom: 12px;
             text-align: center;
@@ -202,6 +207,7 @@ st.markdown("""
             letter-spacing: -0.01em;
         }
 
+        /* HORIZONTAL METRICS BANNER */
         .metrics-banner {
             background-color: #3A3A3C;
             border-radius: 12px;
@@ -235,6 +241,7 @@ st.markdown("""
             color: #111111;
         }
 
+        /* 7-IMAGE OVERLAPPING HERO GALLERY FIX */
         .hero-gallery {
             display: flex !important;
             flex-direction: row !important;
@@ -283,6 +290,7 @@ st.markdown("""
         .hero-far.right  { top: 16px !important; }
         .hero-outer.right{ top: -24px !important; }
 
+        /* PERFECT SYMMETRICAL FLEX GRID FOR PRICING TIERS */
         [data-testid="column"]:has(.pricing-card-marker) { display: flex; flex-direction: column; }
         [data-testid="column"]:has(.pricing-card-marker) > div { flex: 1; display: flex; flex-direction: column; }
         [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) {
@@ -299,11 +307,13 @@ st.markdown("""
             display: flex; flex-direction: column; gap: 8px; min-height: 90px; justify-content: flex-start; 
         }
 
+        /* Pricing Internal Formatting */
         .section-title { font-size: 18px; font-weight: 600; color: #111111; margin-bottom: 16px; letter-spacing: -0.01em; }
         .tier-feature { font-size: 13px; color: #555555; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; }
         .tier-feature span { color: #111111; font-weight: 600; }
         .beta-tag { font-size: 10px; background-color: #E5E5EA; color: #555; padding: 2px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
 
+        /* Main Collapsible Guide */
         details.api-guide-main {
             background-color: #F8F8FA;
             border: 1px solid #E5E5EA;
@@ -320,6 +330,7 @@ st.markdown("""
             user-select: none;
         }
         
+        /* Dual Nested Interactive Guide Cards */
         .guide-toggle-box {
             margin-top: 10px;
             display: flex;
@@ -362,6 +373,7 @@ st.markdown("""
             text-decoration: underline;
         }
 
+        /* Clean Connected Cards */
         [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) {
             background-color: #FFFFFF !important;
             border-radius: 8px !important; border: 1px solid #E5E5EA !important;
@@ -374,6 +386,7 @@ st.markdown("""
             border-radius: 6px !important; margin-top: 8px !important; margin-bottom: 0 !important;
         }
 
+        /* Handled/Success State Card */
         .handled-card {
             background-color: #F2FDF5 !important;
             border: 1px solid #34C759 !important;
@@ -392,6 +405,7 @@ st.markdown("""
             gap: 6px;
         }
 
+        /* Input Clean-up - Forced Light Mode for Inputs */
         [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
             background-color: #F5F5F7 !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important;
             box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; 
@@ -401,9 +415,11 @@ st.markdown("""
         [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; -webkit-text-fill-color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
         [data-baseweb="input"] input::placeholder, [data-baseweb="textarea"] textarea::placeholder { color: #888888 !important; -webkit-text-fill-color: #888888 !important; }
         
+        /* TOGGLE SWITCH (RED/GREEN) */
         div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
         div[data-testid="stToggle"] input:checked + div { background-color: #34C759 !important; } 
 
+        /* ALL Native Buttons */
         .stButton > button, [data-testid="baseButton-primary"] {
             background-color: #3A3A3C !important; color: #FFFFFF !important; border: 1px solid #3A3A3C !important;
             border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; padding: 6px 12px !important;
@@ -411,6 +427,7 @@ st.markdown("""
         }
         .stButton > button:hover, [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
         
+        /* STOP/RESUME BUTTON OVERRIDES */
         .stop-btn-wrapper .stButton > button { background-color: #FF3B30 !important; border-color: #FF3B30 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
         .stop-btn-wrapper .stButton > button:hover { background-color: #D70015 !important; border-color: #D70015 !important; }
         
@@ -419,6 +436,7 @@ st.markdown("""
         
         .completed-btn-wrapper .stButton > button { background-color: #F0F0F2 !important; border-color: #E5E5EA !important; color: #888888 !important; pointer-events: none; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
 
+        /* Clickable Grey Video Title Box */
         button[title="Filter_Video_Btn"] {
             background-color: #F0F0F2 !important;
             color: #555555 !important;
@@ -455,14 +473,17 @@ st.markdown("""
         [data-testid="stSidebar"] .stButton > button { filter: none !important; }
         [data-testid="stSidebar"] .stButton > button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
         
+        /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
 
+        /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
         .status-dot { height: 6px; width: 6px; background-color: #34C759 !important; border-radius: 50%; display: inline-block; margin-right: 8px; animation: subtlePulse 2.5s infinite ease-in-out; vertical-align: middle; }
         .status-badge { display: inline-flex; align-items: center; font-size: 13px; color: #111111; background: #F0F0F2; padding: 4px 10px; border-radius: 6px; font-weight: 500; margin-top: 12px; }
 
+        /* Sidebar Control Center */
         [data-testid="stSidebar"] { background-color: #F5F5F7 !important; border-right: 1px solid #E5E5EA !important; padding-top: 32px; }
         .sb-section { margin-bottom: 32px; padding: 0 12px; }
         .sb-header { font-size: 11px; font-weight: 600; color: #888888; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
@@ -474,6 +495,7 @@ st.markdown("""
         .sb-item-val { font-weight: 500; color: #111111; }
         .sb-divider { height: 1px; background-color: #E5E5EA; margin: 24px 12px; }
 
+        /* Comments Hierarchy */
         .comment-header { margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
         .comment-author { font-size: 14px; font-weight: 600; color: #111111; }
         .comment-date { font-size: 12px; color: #888888; }
@@ -488,7 +510,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle OAuth Callback with Persistent Keys ---
+# --- Handle OAuth Callback Using Persistent Keys ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
@@ -697,7 +719,7 @@ if st.session_state.get("youtube_creds") is not None:
         
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
         st.markdown("<div class='sb-header'>INSTAGRAM</div>", unsafe_allow_html=True)
-        st.markdown(f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
+        st.markdown(f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>', unsafe_allow_html=True)
         st.markdown("</div><div class='sb-divider'></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sb-section'>", unsafe_allow_html=True)
@@ -953,7 +975,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.session_state["auto_reply_paused"] = False 
                             st.rerun() 
                     else:
-                        st.error("API Key missing. Please provide an API key in Setup.")
+                        st.error("API Key missing. Please provide an API key in the Setup.")
 
             # ROW 2: PROGRESS DASHBOARD (Locked inside Sticky Header)
             if st.session_state.get("auto_reply_total") > 0:
@@ -1209,6 +1231,7 @@ if st.session_state.get("youtube_creds") is not None:
                                             chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                             
                                             single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
+                                            # Truncate description to 800 characters to prevent Token Overload
                                             single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
 
                                             ambient_prompt_section = ""
@@ -1590,7 +1613,7 @@ elif st.session_state.get("youtube_creds") is None:
                         free_oauth_error = str(e)
 
                 if free_auth_url:
-                    auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    auth_link_html = f'<a href="{free_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
                     msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
                     auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
@@ -1599,7 +1622,7 @@ elif st.session_state.get("youtube_creds") is None:
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
                     {auth_link_html}
-                    <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                    <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
@@ -1671,15 +1694,15 @@ elif st.session_state.get("youtube_creds") is None:
                     pass
 
             if pro_auth_url:
-                pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="{pro_auth_url}" target="_blank" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
-                pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
+                pro_auth_link = f'<a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
                     {pro_auth_link}
-                    <a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
+                    <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
@@ -1700,7 +1723,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div class="pricing-bottom-zone">
                 <div class="bottom-action-group">
-                    <a href="#" target="_top" class="auth-btn disabled-btn">Initialize Agency Engine <span class="beta-tag">BETA</span></a>
+                    <a href="#" target="_blank" class="auth-btn disabled-btn">Initialize Agency Engine <span class="beta-tag">BETA</span></a>
                 </div>
             </div>
             ''', unsafe_allow_html=True)
