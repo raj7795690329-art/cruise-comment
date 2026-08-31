@@ -64,6 +64,8 @@ defaults = {
     "processed_history": [], 
     "ai_drafts": {},
     "user_gemini_api_key": None,
+    "user_client_id": "",
+    "user_client_secret": "",
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -453,7 +455,7 @@ st.markdown("""
         /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; cursor: not-allowed; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
 
         /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
@@ -491,22 +493,26 @@ st.markdown("""
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
-    state_b64 = query_params.get("state")
+    state_b64 = query_params.get("state", "")
     
-    # Catch legacy query param formats
+    # Catch array formats if URL parsing duplicates
     if isinstance(code, list): code = code[0]
     if isinstance(state_b64, list): state_b64 = state_b64[0]
     
     try:
-        # Decode the stateless payload that traveled to Google and back
-        padded_state = state_b64 + "=" * ((4 - len(state_b64) % 4) % 4)
-        state_json = base64.urlsafe_b64decode(padded_state).decode('utf-8')
+        # 1. Safely decode the stateless payload from the URL
+        state_b64 = str(state_b64).rstrip('=')
+        pad = 4 - (len(state_b64) % 4)
+        if pad != 4:
+            state_b64 += "=" * pad
+            
+        state_json = base64.urlsafe_b64decode(state_b64).decode('utf-8')
         state_pack = json.loads(state_json)
         
         active_cid = state_pack.get("cid")
         active_sec = state_pack.get("csec")
         
-        # Secure fallback for Master Secret so it's not exposed in the Pro URL
+        # Pro Tier security check
         if not active_sec and active_cid == MASTER_CLIENT_ID:
             active_sec = MASTER_CLIENT_SECRET
             
@@ -543,8 +549,13 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         
         st.query_params.clear()
         st.rerun()
+        
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        # 2. CAUGHT! If the user clicked an old corrupted link, safely reset instead of crashing.
+        st.query_params.clear()
+        st.error("⚠️ Old Session Detected! The Google link you clicked has expired. Please clear this error by reloading the page and click 'Connect YouTube' again below.")
     except Exception as e:
-        st.error(f"Stateless authentication failed. Please ensure your credentials are correct. (Error: {e})")
+        st.error(f"Connection failed: {e}")
 
 # --- Core App Structure ---
 if st.session_state.get("youtube_creds") is not None:
@@ -1531,7 +1542,6 @@ elif st.session_state.get("youtube_creds") is None:
                                 <code style="background:#EAEAEA; padding:4px 8px; border-radius:4px; color:#D70015; font-weight:bold; display:inline-block; margin-top:4px;">{APP_URL}</code>
                             </li>
                             <li>Copy the generated <strong>Client ID</strong> and <strong>Client Secret</strong> into the boxes below.</li>
-                            <li><strong style="color: #D70015;">⚠️ Save your keys:</strong> Please save your Client ID and Secret in a secure document! If you clear your browser cache, you will need to re-enter them here.</li>
                         </ol>
                     </div>
                 </details>
@@ -1576,7 +1586,8 @@ elif st.session_state.get("youtube_creds") is None:
                             "ruri": APP_URL,
                             "cv": flow.code_verifier
                         }
-                        state_b64 = base64.urlsafe_b64encode(json.dumps(state_pack).encode('utf-8')).decode('utf-8')
+                        state_json = json.dumps(state_pack, separators=(',', ':'))
+                        state_b64 = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8').rstrip('=')
                         
                         # Swap the generated state in the URL for our custom packed state
                         parsed = urlparse(raw_auth_url)
@@ -1671,7 +1682,9 @@ elif st.session_state.get("youtube_creds") is None:
                         "ruri": APP_URL,
                         "cv": flow.code_verifier
                     }
-                    state_b64 = base64.urlsafe_b64encode(json.dumps(state_pack).encode('utf-8')).decode('utf-8')
+                    state_json = json.dumps(state_pack, separators=(',', ':'))
+                    state_b64 = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8').rstrip('=')
+                    
                     parsed = urlparse(raw_auth_url)
                     qs = parse_qs(parsed.query)
                     qs['state'] = [state_b64]
