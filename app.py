@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import json
 import base64
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import quote
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -78,7 +78,7 @@ def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
     with open(KEYS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-# --- Initialize Session States ---
+# --- Initialize ALL Session States Safely ---
 defaults = {
     "youtube_creds": None,
     "channel_id": None,           
@@ -141,7 +141,7 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Minimal layout styling
+# Minimal CSS for layout spacing only
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
@@ -171,7 +171,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle OAuth Callback ---
+# --- Handle Stateless PKCE OAuth Callback ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
@@ -201,13 +201,22 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        # Recover verifier from state parameter or local file
-        if "::" in str(state_param):
-            _, verifier = str(state_param).split("::", 1)
-            flow.code_verifier = verifier
-        elif os.path.exists(".verifier"):
-            with open(".verifier", "r", encoding="utf-8") as f:
-                flow.code_verifier = f.read().strip()
+        # Safely decode the payload to extract the PKCE Verifier
+        if state_param:
+            try:
+                padded_state = state_param + '=' * (4 - len(state_param) % 4)
+                decoded_state = base64.urlsafe_b64decode(padded_state).decode('utf-8')
+                if "::" in decoded_state:
+                    _, verifier = decoded_state.split("::", 1)
+                    flow.code_verifier = verifier
+            except Exception:
+                pass
+        
+        # Fallback to local file if the state param was missing
+        if not hasattr(flow, 'code_verifier') or not flow.code_verifier:
+            if os.path.exists(".verifier"):
+                with open(".verifier", "r", encoding="utf-8") as f:
+                    flow.code_verifier = f.read().strip()
                 
         flow.fetch_token(code=code)
         credentials = flow.credentials
@@ -223,7 +232,6 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         
         st.session_state["youtube_creds"] = creds_dict
         
-        # Save tokens securely to survive page refreshes
         with open(TOKENS_FILE, "w", encoding="utf-8") as f:
             json.dump(creds_dict, f)
         
@@ -588,7 +596,7 @@ if st.session_state.get("youtube_creds") is not None:
                         st.session_state["auto_reply_queue"] = []
                         st.session_state["auto_reply_total"] = 0
                         st.session_state["auto_reply_paused"] = False
-                    c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+                    c2.button("❌ Close", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         elif st.session_state.get("autopilot_active"):
             st.divider()
@@ -1042,12 +1050,9 @@ elif st.session_state.get("youtube_creds") is None:
                     with open(".verifier", "w", encoding="utf-8") as f:
                         f.write(flow.code_verifier)
                         
-                    # Pack the generated verifier directly into the state
-                    state_pack = f"{state_token}::{flow.code_verifier}"
-                    parsed = urlparse(free_auth_url)
-                    qs = parse_qs(parsed.query)
-                    qs['state'] = [state_pack]
-                    free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                    # Safely encode the custom state without rebuilding the entire URL
+                    safe_pack = base64.urlsafe_b64encode(f"{state_token}::{flow.code_verifier}".encode()).decode().rstrip('=')
+                    free_auth_url = free_auth_url.replace(f"state={state_token}", f"state={safe_pack}")
                     
                 except Exception as e:
                     free_oauth_error = str(e)
@@ -1116,12 +1121,9 @@ elif st.session_state.get("youtube_creds") is None:
                     with open(".verifier", "w", encoding="utf-8") as f:
                         f.write(flow.code_verifier)
                         
-                    # Pack the generated verifier directly into the state
-                    state_pack = f"{state_token}::{flow.code_verifier}"
-                    parsed = urlparse(pro_auth_url)
-                    qs = parse_qs(parsed.query)
-                    qs['state'] = [state_pack]
-                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                    # Safely encode the custom state without rebuilding the entire URL
+                    safe_pack = base64.urlsafe_b64encode(f"{state_token}::{flow.code_verifier}".encode()).decode().rstrip('=')
+                    pro_auth_url = pro_auth_url.replace(f"state={state_token}", f"state={safe_pack}")
                     
                 except Exception:
                     pass
