@@ -9,6 +9,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
+import streamlit.components.v1 as components
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -22,10 +23,12 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
+    # Ignore placeholder text if user forgot to remove it
     if val and "your_actual" in str(val).lower():
         return default
     return val or default
 
+# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
@@ -353,7 +356,7 @@ if st.session_state.get("youtube_creds") is not None:
         st.title("YouTube")
         st.write(f"✅ **Connected as:** {channel_name}")
         
-        if st.button("Disconnect", type="primary", use_container_width=True):
+        if st.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
             st.rerun()
             
@@ -417,17 +420,19 @@ if st.session_state.get("youtube_creds") is not None:
                     height=60,
                     label_visibility="collapsed"
                 )
-                if st.button("💾 Save Settings", type="primary"):
-                    st.session_state["saved_channel_context"] = current_niche_input
-                    st.session_state["context_locked"] = True
-                    with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
-                        f.write(current_niche_input.strip())
-                    st.rerun()
+                col1, col2 = st.columns([5, 1])
+                with col2:
+                    if st.button("💾 Save Settings", use_container_width=True):
+                        st.session_state["saved_channel_context"] = current_niche_input
+                        st.session_state["context_locked"] = True
+                        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
+                            f.write(current_niche_input.strip())
+                        st.rerun()
             else:
                 c1, c2 = st.columns([5, 1], vertical_alignment="center")
                 display_text = st.session_state.get('saved_channel_context', 'No custom style provided.')
                 c1.info(f"**Current Style:** {display_text}")
-                if c2.button("✎ Edit"):
+                if c2.button("✎ Edit", use_container_width=True):
                     st.session_state["context_locked"] = False
                     st.rerun()
 
@@ -499,7 +504,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["global_ai_mode"] = "Standard" if is_enhanced else "Deep Context"
                 st.rerun()
         with col_l:
-            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"])
+            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5)
 
         display_comments = live_comments
         active_filter = st.session_state["selected_video_filter"]
@@ -518,7 +523,7 @@ if st.session_state.get("youtube_creds") is not None:
         with col_b:
             is_replying_btn = bool(st.session_state.get("auto_reply_queue"))
             btn_text = "🤖 Auto-Replying..." if is_replying_btn else "🤖 Reply All with AI"
-            if st.button(btn_text, type="primary", disabled=is_replying_btn, use_container_width=True):
+            if st.button(btn_text, disabled=is_replying_btn, use_container_width=True):
                 active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
                 if active_key:
                     pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
@@ -551,13 +556,14 @@ if st.session_state.get("youtube_creds") is not None:
                         st.button("🛑 Pause", on_click=pause_auto_reply, use_container_width=True)
                     else:
                         c1, c2 = st.columns(2)
-                        with c1: st.button("▶ Resume", type="primary", on_click=resume_auto_reply, use_container_width=True)
+                        with c1: st.button("▶ Resume", on_click=resume_auto_reply, use_container_width=True)
                         with c2: 
                             def cancel_queue():
                                 st.session_state["auto_reply_queue"] = []
                                 st.session_state["auto_reply_total"] = 0
                                 st.session_state["auto_reply_paused"] = False
-                            st.button("❌ Cancel", on_click=cancel_queue, use_container_width=True)
+                            # Only the Cancel button gets the "primary" accent color so it appears RED 
+                            st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
                 else:
                     st.button("✅ Completed", disabled=True, use_container_width=True)
 
@@ -617,9 +623,23 @@ if st.session_state.get("youtube_creds") is not None:
                 
                 if comment_id == processing_id:
                     with st.container(border=True):
+                        # Invisible HTML anchor used by the JS to scroll securely to this exact container
+                        st.markdown(f'<div id="processing-card-{comment_id}"></div>', unsafe_allow_html=True)
                         st.warning("⏳ **CRUISING... DRAFTING REPLY**")
                         st.markdown(f"**{author}** • {formatted_date}")
                         st.markdown(f"> {text}")
+                        
+                    if st.session_state.get("last_scrolled_id") != comment_id:
+                        components.html(f"""
+                            <script>
+                                const parent = window.parent.document;
+                                const el = parent.getElementById('processing-card-{comment_id}');
+                                if(el) {{
+                                    el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                                }}
+                            </script>
+                        """, height=0, width=0)
+                        st.session_state["last_scrolled_id"] = comment_id
                     continue 
 
                 if comment_id in handled_set:
@@ -654,7 +674,7 @@ if st.session_state.get("youtube_creds") is not None:
                         edited_draft = st.text_area("AI Draft", value=st.session_state["ai_drafts"][comment_id], height=68, label_visibility="collapsed", key=f"edit_ai_{comment_id}")
                         
                         ca1, ca2 = st.columns([6, 1])
-                        if ca2.button("Send ➤", type="primary", key=f"send_ai_{comment_id}", use_container_width=True):
+                        if ca2.button("Send ➤", key=f"send_ai_{comment_id}", use_container_width=True):
                             final_reply = st.session_state[f"edit_ai_{comment_id}"]
                             if final_reply.strip():
                                 try:
@@ -726,8 +746,8 @@ Output ONLY the reply text."""
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
-                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}")
-                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}")
+                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
+                        ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
                     st.caption("Manual Override")
                     st.text_area("Manual Reply", placeholder="Write a personal response...", height=60, label_visibility="collapsed", key=f"text_{comment_id}")
@@ -1067,7 +1087,7 @@ elif st.session_state.get("youtube_creds") is None:
                 <div class="tier-feature"><span>✓</span> Single creator account</div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("🤖 Test AI Connection", type="primary", use_container_width=True, key="pro_btn"):
+                if st.button("🤖 Test AI Connection", use_container_width=True, key="pro_btn"):
                     if MASTER_API_KEY:
                         with st.spinner("Connecting to Master Engine..."):
                             try:
