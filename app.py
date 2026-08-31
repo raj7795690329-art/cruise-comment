@@ -1,8 +1,6 @@
 import streamlit as st
 import os
 import json
-import base64
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -23,17 +21,15 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
-    # Ignore placeholder text if user forgot to remove it
-    if val and "your_actual" in val.lower():
+    if val and "your_actual" in str(val).lower():
         return default
     return val or default
 
-# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
 
-# Hardcoded Live App URL so users never have to guess or type it
+# Hardcoded Live App URL for YouTube OAuth
 APP_URL = "https://cruise-comment-ai.streamlit.app"
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -46,12 +42,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Persistent Context Storage ---
+# --- Persistent Local Storage for Keys & Context ---
 CONTEXT_FILE = ".cruise_context"
+KEYS_FILE = ".cruise_keys.json"
+
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
         loaded_context = f.read().strip()
+
+saved_keys = {}
+if os.path.exists(KEYS_FILE):
+    try:
+        with open(KEYS_FILE, "r", encoding="utf-8") as f:
+            saved_keys = json.load(f)
+    except Exception:
+        saved_keys = {}
+
+def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
+    if os.path.exists(KEYS_FILE):
+        try:
+            with open(KEYS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    if api_key is not None: data["api_key"] = api_key.strip()
+    if client_id is not None: data["client_id"] = client_id.strip()
+    if client_secret is not None: data["client_secret"] = client_secret.strip()
+    with open(KEYS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
 
 # --- Initialize ALL Session States Safely ---
 defaults = {
@@ -63,9 +84,9 @@ defaults = {
     "sent_replies_log": {},
     "processed_history": [], 
     "ai_drafts": {},
-    "user_gemini_api_key": None,
-    "user_client_id": "",
-    "user_client_secret": "",
+    "user_gemini_api_key": saved_keys.get("api_key", ""),
+    "user_client_id": saved_keys.get("client_id", ""),
+    "user_client_secret": saved_keys.get("client_secret", ""),
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -118,7 +139,6 @@ def get_relative_time(dt):
 # --- Strict Apple-Inspired Monochromatic Design System ---
 st.markdown("""
     <style>
-        /* Typography & Core Variables */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
         
         .stApp { 
@@ -127,13 +147,11 @@ st.markdown("""
             color: #111111 !important;
         }
 
-        /* Subtle Entrance Animation */
         @keyframes fadeSlideUp {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        /* SCROLL FIX */
         .stAppViewContainer, .stMain, .stAppViewBlockContainer {
             overflow: auto !important;
         }
@@ -151,7 +169,6 @@ st.markdown("""
 
         header[data-testid="stHeader"] { display: none; }
         
-        /* FULL COVERAGE STICKY HEADER FIX */
         div[data-testid="stVerticalBlock"] > div:has(.sticky-anchor-container) {
             position: -webkit-sticky !important;
             position: sticky !important;
@@ -165,7 +182,6 @@ st.markdown("""
             width: calc(100% + 4rem) !important;
         }
 
-        /* System Header */
         .system-header {
             margin-bottom: 12px;
             text-align: center;
@@ -186,7 +202,6 @@ st.markdown("""
             letter-spacing: -0.01em;
         }
 
-        /* HORIZONTAL METRICS BANNER */
         .metrics-banner {
             background-color: #3A3A3C;
             border-radius: 12px;
@@ -220,7 +235,6 @@ st.markdown("""
             color: #111111;
         }
 
-        /* 7-IMAGE OVERLAPPING HERO GALLERY FIX */
         .hero-gallery {
             display: flex !important;
             flex-direction: row !important;
@@ -269,7 +283,6 @@ st.markdown("""
         .hero-far.right  { top: 16px !important; }
         .hero-outer.right{ top: -24px !important; }
 
-        /* PERFECT SYMMETRICAL FLEX GRID FOR PRICING TIERS */
         [data-testid="column"]:has(.pricing-card-marker) { display: flex; flex-direction: column; }
         [data-testid="column"]:has(.pricing-card-marker) > div { flex: 1; display: flex; flex-direction: column; }
         [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) {
@@ -286,13 +299,11 @@ st.markdown("""
             display: flex; flex-direction: column; gap: 8px; min-height: 90px; justify-content: flex-start; 
         }
 
-        /* Pricing Internal Formatting */
         .section-title { font-size: 18px; font-weight: 600; color: #111111; margin-bottom: 16px; letter-spacing: -0.01em; }
         .tier-feature { font-size: 13px; color: #555555; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; }
         .tier-feature span { color: #111111; font-weight: 600; }
         .beta-tag { font-size: 10px; background-color: #E5E5EA; color: #555; padding: 2px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
 
-        /* Main Collapsible Guide */
         details.api-guide-main {
             background-color: #F8F8FA;
             border: 1px solid #E5E5EA;
@@ -309,7 +320,6 @@ st.markdown("""
             user-select: none;
         }
         
-        /* Dual Nested Interactive Guide Cards */
         .guide-toggle-box {
             margin-top: 10px;
             display: flex;
@@ -352,7 +362,6 @@ st.markdown("""
             text-decoration: underline;
         }
 
-        /* Clean Connected Cards */
         [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) {
             background-color: #FFFFFF !important;
             border-radius: 8px !important; border: 1px solid #E5E5EA !important;
@@ -365,7 +374,6 @@ st.markdown("""
             border-radius: 6px !important; margin-top: 8px !important; margin-bottom: 0 !important;
         }
 
-        /* Handled/Success State Card */
         .handled-card {
             background-color: #F2FDF5 !important;
             border: 1px solid #34C759 !important;
@@ -384,7 +392,6 @@ st.markdown("""
             gap: 6px;
         }
 
-        /* Input Clean-up - Forced Light Mode for Inputs */
         [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
             background-color: #F5F5F7 !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important;
             box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; 
@@ -394,11 +401,9 @@ st.markdown("""
         [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; -webkit-text-fill-color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
         [data-baseweb="input"] input::placeholder, [data-baseweb="textarea"] textarea::placeholder { color: #888888 !important; -webkit-text-fill-color: #888888 !important; }
         
-        /* TOGGLE SWITCH (RED/GREEN) */
         div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
         div[data-testid="stToggle"] input:checked + div { background-color: #34C759 !important; } 
 
-        /* ALL Native Buttons */
         .stButton > button, [data-testid="baseButton-primary"] {
             background-color: #3A3A3C !important; color: #FFFFFF !important; border: 1px solid #3A3A3C !important;
             border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; padding: 6px 12px !important;
@@ -406,7 +411,6 @@ st.markdown("""
         }
         .stButton > button:hover, [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
         
-        /* STOP/RESUME BUTTON OVERRIDES */
         .stop-btn-wrapper .stButton > button { background-color: #FF3B30 !important; border-color: #FF3B30 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
         .stop-btn-wrapper .stButton > button:hover { background-color: #D70015 !important; border-color: #D70015 !important; }
         
@@ -415,7 +419,6 @@ st.markdown("""
         
         .completed-btn-wrapper .stButton > button { background-color: #F0F0F2 !important; border-color: #E5E5EA !important; color: #888888 !important; pointer-events: none; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
 
-        /* Clickable Grey Video Title Box */
         button[title="Filter_Video_Btn"] {
             background-color: #F0F0F2 !important;
             color: #555555 !important;
@@ -452,17 +455,14 @@ st.markdown("""
         [data-testid="stSidebar"] .stButton > button { filter: none !important; }
         [data-testid="stSidebar"] .stButton > button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
         
-        /* Anchor Action Links for Tiers */
         .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
-        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
+        .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; }
 
-        /* Green Active Pulse Indicator */
         @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
         .status-dot { height: 6px; width: 6px; background-color: #34C759 !important; border-radius: 50%; display: inline-block; margin-right: 8px; animation: subtlePulse 2.5s infinite ease-in-out; vertical-align: middle; }
         .status-badge { display: inline-flex; align-items: center; font-size: 13px; color: #111111; background: #F0F0F2; padding: 4px 10px; border-radius: 6px; font-weight: 500; margin-top: 12px; }
 
-        /* Sidebar Control Center */
         [data-testid="stSidebar"] { background-color: #F5F5F7 !important; border-right: 1px solid #E5E5EA !important; padding-top: 32px; }
         .sb-section { margin-bottom: 32px; padding: 0 12px; }
         .sb-header { font-size: 11px; font-weight: 600; color: #888888; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
@@ -474,7 +474,6 @@ st.markdown("""
         .sb-item-val { font-weight: 500; color: #111111; }
         .sb-divider { height: 1px; background-color: #E5E5EA; margin: 24px 12px; }
 
-        /* Comments Hierarchy */
         .comment-header { margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
         .comment-author { font-size: 14px; font-weight: 600; color: #111111; }
         .comment-date { font-size: 12px; color: #888888; }
@@ -489,36 +488,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Handle Stateless OAuth Callback ---
+# --- Handle OAuth Callback with Persistent Keys ---
 query_params = st.query_params
 if "code" in query_params and st.session_state.get("youtube_creds") is None:
     code = query_params.get("code")
-    state_b64 = query_params.get("state", "")
-    
-    # Catch array formats if URL parsing duplicates
     if isinstance(code, list): code = code[0]
-    if isinstance(state_b64, list): state_b64 = state_b64[0]
     
     try:
-        # 1. Safely decode the stateless payload from the URL
-        state_b64 = str(state_b64).rstrip('=')
-        pad = 4 - (len(state_b64) % 4)
-        if pad != 4:
-            state_b64 += "=" * pad
+        active_cid = saved_keys.get("client_id") or st.session_state.get("user_client_id") or MASTER_CLIENT_ID
+        active_sec = saved_keys.get("client_secret") or st.session_state.get("user_client_secret") or MASTER_CLIENT_SECRET
+        
+        if not active_cid or not active_sec:
+            raise ValueError("Google Client ID or Client Secret missing. Please re-enter them.")
             
-        state_json = base64.urlsafe_b64decode(state_b64).decode('utf-8')
-        state_pack = json.loads(state_json)
-        
-        active_cid = state_pack.get("cid")
-        active_sec = state_pack.get("csec")
-        
-        # Pro Tier security check
-        if not active_sec and active_cid == MASTER_CLIENT_ID:
-            active_sec = MASTER_CLIENT_SECRET
-            
-        active_ruri = state_pack.get("ruri")
-        verifier = state_pack.get("cv")
-        
         client_config = {
             "web": {
                 "client_id": active_cid,
@@ -530,11 +512,13 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow = Flow.from_client_config(
             client_config,
             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
-            redirect_uri=active_ruri
+            redirect_uri=APP_URL
         )
         
-        # Inject the preserved PKCE verifier directly
-        flow.code_verifier = verifier
+        if os.path.exists(".verifier"):
+            with open(".verifier", "r", encoding="utf-8") as f:
+                flow.code_verifier = f.read().strip()
+                
         flow.fetch_token(code=code)
         credentials = flow.credentials
         
@@ -547,13 +531,11 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             "scopes": credentials.scopes
         }
         
+        if os.path.exists(".verifier"):
+            os.remove(".verifier")
+            
         st.query_params.clear()
         st.rerun()
-        
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        # 2. CAUGHT! If the user clicked an old corrupted link, safely reset instead of crashing.
-        st.query_params.clear()
-        st.error("⚠️ Old Session Detected! The Google link you clicked has expired. Please clear this error by reloading the page and click 'Connect YouTube' again below.")
     except Exception as e:
         st.error(f"Connection failed: {e}")
 
@@ -957,7 +939,7 @@ if st.session_state.get("youtube_creds") is not None:
                 btn_text = "🤖 Auto-Replying..." if is_replying_btn else "🤖 Reply All with AI"
                 
                 if st.button(btn_text, type="primary", disabled=is_replying_btn, use_container_width=True):
-                    active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                    active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
                     if active_key:
                         pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
                         
@@ -971,7 +953,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.session_state["auto_reply_paused"] = False 
                             st.rerun() 
                     else:
-                        st.error("API Key missing. Please provide an API key in the Setup.")
+                        st.error("API Key missing. Please provide an API key in Setup.")
 
             # ROW 2: PROGRESS DASHBOARD (Locked inside Sticky Header)
             if st.session_state.get("auto_reply_total") > 0:
@@ -1217,7 +1199,7 @@ if st.session_state.get("youtube_creds") is not None:
                         ca_btn, ca_mood, ca_len, ca_empty = st.columns([2.5, 1.5, 1.5, 2.5], vertical_alignment="bottom")
                         with ca_btn:
                             if st.button("🤖 Draft AI Reply", key=f"ai_{comment_id}", use_container_width=True):
-                                active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                                active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
                                 if active_key:
                                     with st.spinner("Drafting..."):
                                         try:
@@ -1227,7 +1209,6 @@ if st.session_state.get("youtube_creds") is not None:
                                             chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                             
                                             single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
-                                            # Truncate description to 800 characters to prevent Token Overload
                                             single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
 
                                             ambient_prompt_section = ""
@@ -1329,7 +1310,7 @@ Output ONLY the reply text."""
             text = current_item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
             
             try:
-                active_key = MASTER_API_KEY or st.session_state.get("user_gemini_api_key")
+                active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
                 client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
@@ -1386,9 +1367,8 @@ Output ONLY the reply text."""
             except Exception as e:
                 print(f"Auto-reply error: {e}")
             
-            # Pop the queue so it moves to the next comment
             st.session_state["auto_reply_queue"].pop(0)
-            time.sleep(1) # Safety delay to prevent YouTube API limits
+            time.sleep(1)
             st.rerun()
 
         # --- AUTOPILOT ---
@@ -1472,7 +1452,6 @@ elif st.session_state.get("youtube_creds") is None:
                 <div class="tier-feature"><span>✓</span> Single creator account</div>
                 """, unsafe_allow_html=True)
                 
-                # --- DUAL-HOVER INTERACTIVE GOOGLE AI STUDIO GUIDE ---
                 details_guide = """
                 <details class="api-guide-main">
                     <summary>📖 How to get your Google API key (AI Studio)</summary>
@@ -1501,7 +1480,17 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_guide, unsafe_allow_html=True)
 
-                user_api_key = st.text_input("API Key", type="password", placeholder="Paste Gemini API Key here...", label_visibility="collapsed")
+                user_api_key = st.text_input(
+                    "API Key", 
+                    value=st.session_state.get("user_gemini_api_key", ""), 
+                    type="password", 
+                    placeholder="Paste Gemini API Key here...", 
+                    label_visibility="collapsed",
+                    key="free_tier_api_key_input"
+                )
+                if user_api_key != st.session_state.get("user_gemini_api_key", ""):
+                    st.session_state["user_gemini_api_key"] = user_api_key
+                    update_persisted_keys(api_key=user_api_key)
                 
                 if st.button("🤖 Test AI Connection", use_container_width=True, key="free_btn"):
                     if not user_api_key or not user_api_key.strip():
@@ -1519,6 +1508,7 @@ elif st.session_state.get("youtube_creds") is None:
                                     contents="Say hello in 3 words."
                                 )
                                 st.session_state["user_gemini_api_key"] = user_api_key.strip()
+                                update_persisted_keys(api_key=user_api_key.strip())
                                 st.markdown("""
                                 <div style="background-color: #F2FDF5; border: 1px solid #34C759; color: #248A3D; padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 500; margin-bottom: 12px;">
                                     ✓ Connection established! Proceed to YouTube Connection.
@@ -1548,12 +1538,28 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
-                # --- DYNAMIC YOUTUBE OAUTH INPUTS (Instant Update, No Save Button) ---
-                ui_cid = st.text_input("Google Client ID", key="user_client_id_input", placeholder="Client ID (ends in .apps.googleusercontent.com)", label_visibility="collapsed")
-                ui_sec = st.text_input("Google Client Secret", key="user_client_secret_input", type="password", placeholder="Client Secret", label_visibility="collapsed")
+                ui_cid = st.text_input(
+                    "Google Client ID", 
+                    value=st.session_state.get("user_client_id", ""), 
+                    placeholder="Client ID (ends in .apps.googleusercontent.com)", 
+                    label_visibility="collapsed",
+                    key="ui_cid_input"
+                )
+                ui_sec = st.text_input(
+                    "Google Client Secret", 
+                    value=st.session_state.get("user_client_secret", ""), 
+                    type="password", 
+                    placeholder="Client Secret", 
+                    label_visibility="collapsed",
+                    key="ui_sec_input"
+                )
+                
+                if ui_cid != st.session_state.get("user_client_id", "") or ui_sec != st.session_state.get("user_client_secret", ""):
+                    st.session_state["user_client_id"] = ui_cid
+                    st.session_state["user_client_secret"] = ui_sec
+                    update_persisted_keys(client_id=ui_cid, client_secret=ui_sec)
             
-                # Generate Free Tier Auth URL dynamically based on frontend inputs
-                free_auth_url = "#"
+                free_auth_url = None
                 free_oauth_error = ""
                 cid = ui_cid.strip()
                 csec = ui_sec.strip()
@@ -1573,37 +1579,21 @@ elif st.session_state.get("youtube_creds") is None:
                             scopes=["https://www.googleapis.com/auth/youtube.force-ssl"], 
                             redirect_uri=APP_URL
                         )
-                        raw_auth_url, _ = flow.authorization_url(
+                        free_auth_url, _ = flow.authorization_url(
                             prompt='consent', 
                             access_type='offline',
                             include_granted_scopes='true'
                         )
-                        
-                        # Stateless Packing: Encrypt the exact keys into the URL state to bypass Streamlit amnesia
-                        state_pack = {
-                            "cid": cid,
-                            "csec": csec,
-                            "ruri": APP_URL,
-                            "cv": flow.code_verifier
-                        }
-                        state_json = json.dumps(state_pack, separators=(',', ':'))
-                        state_b64 = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8').rstrip('=')
-                        
-                        # Swap the generated state in the URL for our custom packed state
-                        parsed = urlparse(raw_auth_url)
-                        qs = parse_qs(parsed.query)
-                        qs['state'] = [state_b64]
-                        free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
-                        
+                        with open(".verifier", "w", encoding="utf-8") as f:
+                            f.write(flow.code_verifier)
                     except Exception as e:
                         free_oauth_error = str(e)
 
-                if free_auth_url != "#":
-                    # target="_top" securely breaks out of the Streamlit iframe sandbox
+                if free_auth_url:
                     auth_link_html = f'<a href="{free_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
                 else:
-                    err_html = f'<div style="color: #D70015; font-size: 12px; margin-bottom: 8px;">{free_oauth_error}</div>' if free_oauth_error else ""
-                    auth_link_html = f'{err_html}<a href="#" onclick="alert(\'Please enter your Client ID and Secret first.\'); return false;" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube</a>'
+                    msg = free_oauth_error if free_oauth_error else "Enter your Client ID and Client Secret above to enable connection."
+                    auth_link_html = f'<div style="font-size: 12px; color: #888888; text-align: center; padding: 10px; background: #F0F0F2; border-radius: 6px; border: 1px solid #E5E5EA;">{msg}</div>'
 
             st.markdown(f'''
             <div class="pricing-bottom-zone">
@@ -1654,7 +1644,7 @@ elif st.session_state.get("youtube_creds") is None:
                         </div>
                         """, unsafe_allow_html=True)
             
-            pro_auth_url = "#"
+            pro_auth_url = None
             if MASTER_CLIENT_ID and MASTER_CLIENT_SECRET:
                 try:
                     client_config = {
@@ -1670,29 +1660,17 @@ elif st.session_state.get("youtube_creds") is None:
                         scopes=["https://www.googleapis.com/auth/youtube.force-ssl"],
                         redirect_uri=APP_URL
                     )
-                    raw_auth_url, _ = flow.authorization_url(
+                    pro_auth_url, _ = flow.authorization_url(
                         prompt='consent', 
                         access_type='offline',
                         include_granted_scopes='true'
                     )
-                    
-                    # Pro Tier pack omits the secret so it doesn't appear in the URL
-                    state_pack = {
-                        "cid": MASTER_CLIENT_ID,
-                        "ruri": APP_URL,
-                        "cv": flow.code_verifier
-                    }
-                    state_json = json.dumps(state_pack, separators=(',', ':'))
-                    state_b64 = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8').rstrip('=')
-                    
-                    parsed = urlparse(raw_auth_url)
-                    qs = parse_qs(parsed.query)
-                    qs['state'] = [state_b64]
-                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                    with open(".verifier", "w", encoding="utf-8") as f:
+                        f.write(flow.code_verifier)
                 except Exception:
                     pass
 
-            if pro_auth_url != "#":
+            if pro_auth_url:
                 pro_auth_link = f'<a href="{pro_auth_url}" target="_top" class="auth-btn"><span style="color: #34C759; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
             else:
                 pro_auth_link = f'<a href="#" target="_top" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span class="beta-tag">BETA</span></a>'
