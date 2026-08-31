@@ -23,6 +23,7 @@ def get_secret(key, default=None):
             val = st.secrets[key]
     except Exception:
         pass
+    # Ignore placeholder text if user forgot to remove it
     if val and "your_actual" in str(val).lower():
         return default
     return val or default
@@ -45,10 +46,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Persistent Local Storage for Keys, Tokens & Context ---
+# --- Persistent Local Storage for Keys & Context ---
 CONTEXT_FILE = ".cruise_context"
 KEYS_FILE = ".cruise_keys.json"
-TOKENS_FILE = ".youtube_tokens.json"
 
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
@@ -113,14 +113,6 @@ defaults = {
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
-
-# Load Persisted Session Tokens so Refresh Doesn't Log User Out
-if st.session_state["youtube_creds"] is None and os.path.exists(TOKENS_FILE):
-    try:
-        with open(TOKENS_FILE, "r", encoding="utf-8") as f:
-            st.session_state["youtube_creds"] = json.load(f)
-    except Exception:
-        pass
 
 def get_relative_time(dt):
     now = datetime.now(timezone.utc)
@@ -212,7 +204,7 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         flow.fetch_token(code=code)
         credentials = flow.credentials
         
-        creds_dict = {
+        st.session_state["youtube_creds"] = {
             "token": credentials.token,
             "refresh_token": credentials.refresh_token,
             "token_uri": credentials.token_uri,
@@ -220,12 +212,6 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             "client_secret": credentials.client_secret,
             "scopes": credentials.scopes
         }
-        
-        st.session_state["youtube_creds"] = creds_dict
-        
-        # Save tokens securely to survive page refreshes
-        with open(TOKENS_FILE, "w", encoding="utf-8") as f:
-            json.dump(creds_dict, f)
         
         if os.path.exists(".verifier"):
             os.remove(".verifier")
@@ -372,8 +358,6 @@ if st.session_state.get("youtube_creds") is not None:
         
         if st.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
-            if os.path.exists(TOKENS_FILE):
-                os.remove(TOKENS_FILE)
             st.rerun()
             
         st.divider()
@@ -522,7 +506,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["global_ai_mode"] = "Standard" if is_enhanced else "Deep Context"
                 st.rerun()
         with col_l:
-            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5)
+            reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5) # Default is "All" (index 5)
 
         display_comments = live_comments
         active_filter = st.session_state["selected_video_filter"]
@@ -588,7 +572,7 @@ if st.session_state.get("youtube_creds") is not None:
                         st.session_state["auto_reply_queue"] = []
                         st.session_state["auto_reply_total"] = 0
                         st.session_state["auto_reply_paused"] = False
-                    c2.button("❌", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+                    c2.button("❌ Close", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         elif st.session_state.get("autopilot_active"):
             st.divider()
@@ -610,7 +594,7 @@ if st.session_state.get("youtube_creds") is not None:
                     st.write(f"✈️ **Autopilot Active: Sleeping. Next scan in {remaining}s...**")
                     st.progress(prog)
             with b_col:
-                if st.button("🛑 Stop Autopilot", use_container_width=True):
+                if st.button("🛑 Stop Autopilot", type="primary", use_container_width=True):
                     st.session_state["autopilot_active"] = False
                     st.session_state.pop("autopilot_next_run", None)
                     st.session_state.pop("autopilot_force_fetch", None)
@@ -972,11 +956,13 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_guide, unsafe_allow_html=True)
 
+                st.write("**Gemini API Key**")
                 user_api_key = st.text_input(
                     "Gemini API Key", 
                     value=saved_keys.get("api_key", st.session_state.get("user_gemini_api_key", "")), 
                     type="password", 
                     placeholder="Paste Gemini API Key here...", 
+                    label_visibility="collapsed",
                     key="free_tier_api_key_input"
                 )
                 if user_api_key != st.session_state.get("user_gemini_api_key", ""):
@@ -1017,8 +1003,9 @@ elif st.session_state.get("youtube_creds") is None:
                     <summary style="color: #995B00;">🎥 How to setup YouTube Connection</summary>
                     <div class="guide-toggle-box">
                         <ol style="color: #555;">
-                            <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > Credentials.</li>
-                            <li>Click <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
+                            <li>Go to <strong>Google Cloud Console</strong> > APIs & Services > OAuth consent screen.</li>
+                            <li>Set User Type to External and click <strong>Publish App</strong> (moves it from Testing to In Production).</li>
+                            <li>Go to <strong>Credentials</strong> > <strong>+ Create Credentials</strong> > <strong>OAuth client ID</strong> (Web application).</li>
                             <li>Under <strong>Authorized redirect URIs</strong>, copy and paste this exact link:<br>
                                 <code style="background:#EAEAEA; padding:4px 8px; border-radius:4px; color:#D70015; font-weight:bold; display:inline-block; margin-top:4px;">{APP_URL}</code>
                             </li>
@@ -1029,17 +1016,22 @@ elif st.session_state.get("youtube_creds") is None:
                 """
                 st.markdown(details_oauth_guide, unsafe_allow_html=True)
 
+                st.write("**Google Client ID**")
                 ui_cid = st.text_input(
                     "Google Client ID", 
                     value=saved_keys.get("client_id", st.session_state.get("user_client_id", "")), 
                     placeholder="Client ID (ends in .apps.googleusercontent.com)", 
+                    label_visibility="collapsed",
                     key="ui_cid_input"
                 )
+                
+                st.write("**Google Client Secret**")
                 ui_sec = st.text_input(
                     "Google Client Secret", 
                     value=saved_keys.get("client_secret", st.session_state.get("user_client_secret", "")), 
                     type="password", 
                     placeholder="Client Secret", 
+                    label_visibility="collapsed",
                     key="ui_sec_input"
                 )
                 
