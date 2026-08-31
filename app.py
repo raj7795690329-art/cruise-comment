@@ -1,6 +1,8 @@
 import streamlit as st
 import os
 import json
+import base64
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -25,6 +27,7 @@ def get_secret(key, default=None):
         return default
     return val or default
 
+# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
@@ -199,8 +202,9 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         )
         
         # Recover verifier from state parameter or local file
-        if state_param:
-            flow.code_verifier = str(state_param)
+        if "::" in str(state_param):
+            _, verifier = str(state_param).split("::", 1)
+            flow.code_verifier = verifier
         elif os.path.exists(".verifier"):
             with open(".verifier", "r", encoding="utf-8") as f:
                 flow.code_verifier = f.read().strip()
@@ -584,7 +588,7 @@ if st.session_state.get("youtube_creds") is not None:
                         st.session_state["auto_reply_queue"] = []
                         st.session_state["auto_reply_total"] = 0
                         st.session_state["auto_reply_paused"] = False
-                    c2.button("❌ Close", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+                    c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         elif st.session_state.get("autopilot_active"):
             st.divider()
@@ -1029,15 +1033,22 @@ elif st.session_state.get("youtube_creds") is None:
                         redirect_uri=APP_URL
                     )
                     
+                    free_auth_url, state_token = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
+                    
                     with open(".verifier", "w", encoding="utf-8") as f:
                         f.write(flow.code_verifier)
                         
-                    free_auth_url, _ = flow.authorization_url(
-                        prompt='consent', 
-                        access_type='offline',
-                        include_granted_scopes='true',
-                        state=flow.code_verifier
-                    )
+                    # Pack the generated verifier directly into the state
+                    state_pack = f"{state_token}::{flow.code_verifier}"
+                    parsed = urlparse(free_auth_url)
+                    qs = parse_qs(parsed.query)
+                    qs['state'] = [state_pack]
+                    free_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                    
                 except Exception as e:
                     free_oauth_error = str(e)
 
@@ -1096,15 +1107,22 @@ elif st.session_state.get("youtube_creds") is None:
                         redirect_uri=APP_URL
                     )
                     
+                    pro_auth_url, state_token = flow.authorization_url(
+                        prompt='consent', 
+                        access_type='offline',
+                        include_granted_scopes='true'
+                    )
+                    
                     with open(".verifier", "w", encoding="utf-8") as f:
                         f.write(flow.code_verifier)
                         
-                    pro_auth_url, _ = flow.authorization_url(
-                        prompt='consent', 
-                        access_type='offline',
-                        include_granted_scopes='true',
-                        state=flow.code_verifier
-                    )
+                    # Pack the generated verifier directly into the state
+                    state_pack = f"{state_token}::{flow.code_verifier}"
+                    parsed = urlparse(pro_auth_url)
+                    qs = parse_qs(parsed.query)
+                    qs['state'] = [state_pack]
+                    pro_auth_url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+                    
                 except Exception:
                     pass
 
