@@ -162,11 +162,13 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Minimal layout styling
+# Minimal layout styling & Animation Keyframes
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
         header[data-testid="stHeader"] { display: none; }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         .hero-gallery {
             display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important;
@@ -390,7 +392,12 @@ if st.session_state.get("youtube_creds") is not None:
     # --- Sidebar ---
     with st.sidebar:
         st.title("YouTube")
-        st.write(f"✅ **Connected as:** {channel_name}")
+        st.markdown(f"""
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <img src="{channel_logo}" style="width: 36px; height: 36px; border-radius: 50%; border: 1px solid #4CAF50;">
+                <div style="font-weight: 500; font-size: 14px; line-height: 1.2;">Connected as:<br><span style="color: #4CAF50; font-weight: 600;">{channel_name}</span></div>
+            </div>
+        """, unsafe_allow_html=True)
         
         if st.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
@@ -522,7 +529,8 @@ if st.session_state.get("youtube_creds") is not None:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
         
-        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.5, 1.0, 1.0, 1.0, 1.1, 1.4, 0.7, 1.6], vertical_alignment="bottom")
+        # Adjusted column widths to prevent text truncation in dropdowns
+        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.8, 1.1, 1.5, 1.1, 1.1, 1.4, 0.9, 1.6], vertical_alignment="bottom")
         
         with col_v:
             selected_video_title = st.selectbox("Video Filter", video_options, index=video_options.index(current_selection))
@@ -669,7 +677,15 @@ if st.session_state.get("youtube_creds") is not None:
                 if comment_id == processing_id:
                     with st.container(border=True):
                         st.markdown(f'<div id="processing-card-{comment_id}"></div>', unsafe_allow_html=True)
-                        st.warning("⏳ **CRUISING... DRAFTING REPLY**")
+                        
+                        # Added animated spinner specifically for the drafting phase
+                        st.markdown("""
+                            <div style='display: flex; align-items: center; color: #FF9500; font-weight: 700; margin-bottom: 12px; font-size: 14px;'>
+                                <div style='border: 3px solid rgba(255,149,0,0.3); border-top: 3px solid #FF9500; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; margin-right: 10px;'></div>
+                                CRUISING... DRAFTING REPLY
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
                         st.markdown(f"**{author}** • {formatted_date}")
                         st.markdown(f"> {text}")
                         
