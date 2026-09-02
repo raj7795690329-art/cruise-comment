@@ -109,6 +109,7 @@ defaults = {
     "sent_replies_log": {},
     "processed_history": [], 
     "ai_drafts": {},
+    "ai_errors": {}, # New dict to explicitly catch skip reasons
     "user_gemini_api_key": saved_keys.get("api_key", ""),
     "user_client_id": saved_keys.get("client_id", ""),
     "user_client_secret": saved_keys.get("client_secret", ""),
@@ -389,6 +390,12 @@ if st.session_state.get("youtube_creds") is not None:
     handled_pct = int((handled_count / total_fetched) * 100) if total_fetched > 0 else 0
     pending_pct = int((pending_count / total_fetched) * 100) if total_fetched > 0 else 0
 
+    def pause_auto_reply():
+        st.session_state["auto_reply_paused"] = True
+
+    def resume_auto_reply():
+        st.session_state["auto_reply_paused"] = False
+
     # --- Sidebar ---
     with st.sidebar:
         st.title("YouTube")
@@ -434,14 +441,41 @@ if st.session_state.get("youtube_creds") is not None:
         st.metric("Replies Handled", handled_count)
         st.metric("Need Attention", pending_count)
 
+        # STAGNANT PROGRESS DASHBOARD MOVED TO SIDEBAR 
+        if st.session_state.get("auto_reply_total") > 0:
+            st.divider()
+            st.subheader("🚀 Cruising Progress")
+            total = st.session_state["auto_reply_total"]
+            left = len(st.session_state["auto_reply_queue"])
+            done = total - left
+            
+            st.progress(done / total if total > 0 else 0.0)
+            st.write(f"**{done} of {total} sent.**")
+            
+            if left > 0:
+                if not st.session_state.get("auto_reply_paused"):
+                    st.button("🛑 Pause", on_click=pause_auto_reply, use_container_width=True)
+                else:
+                    c1, c2 = st.columns(2)
+                    with c1: st.button("▶ Resume", on_click=resume_auto_reply, use_container_width=True)
+                    with c2: 
+                        def cancel_queue():
+                            st.session_state["auto_reply_queue"] = []
+                            st.session_state["auto_reply_total"] = 0
+                            st.session_state["auto_reply_paused"] = False
+                        st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
+            else:
+                c1, c2 = st.columns([7, 3])
+                c1.button("✅ Completed", disabled=True, use_container_width=True)
+                def clear_completed():
+                    st.session_state["auto_reply_queue"] = []
+                    st.session_state["auto_reply_total"] = 0
+                    st.session_state["auto_reply_paused"] = False
+                c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+
+
     def set_video_filter(target_option):
         st.session_state["selected_video_filter"] = target_option
-
-    def pause_auto_reply():
-        st.session_state["auto_reply_paused"] = True
-
-    def resume_auto_reply():
-        st.session_state["auto_reply_paused"] = False
 
     # --- Dashboard View ---
     if channel_id is not None:
@@ -587,40 +621,7 @@ if st.session_state.get("youtube_creds") is not None:
                 else:
                     st.error("API Key missing. Please provide an API key in Setup.")
 
-        # PROGRESS DASHBOARD
-        if st.session_state.get("auto_reply_total") > 0:
-            st.divider()
-            total = st.session_state["auto_reply_total"]
-            left = len(st.session_state["auto_reply_queue"])
-            done = total - left
-            
-            p_col, b_col = st.columns([7.5, 2.5], vertical_alignment="center")
-            with p_col:
-                st.write(f"🚀 **Cruising through comments... {done} of {total} sent.**")
-                st.progress(done / total if total > 0 else 0.0)
-            with b_col:
-                if left > 0:
-                    if not st.session_state.get("auto_reply_paused"):
-                        st.button("🛑 Pause", on_click=pause_auto_reply, use_container_width=True)
-                    else:
-                        c1, c2 = st.columns(2)
-                        with c1: st.button("▶ Resume", on_click=resume_auto_reply, use_container_width=True)
-                        with c2: 
-                            def cancel_queue():
-                                st.session_state["auto_reply_queue"] = []
-                                st.session_state["auto_reply_total"] = 0
-                                st.session_state["auto_reply_paused"] = False
-                            st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
-                else:
-                    c1, c2 = st.columns([7, 3])
-                    c1.button("✅ Completed", disabled=True, use_container_width=True)
-                    def clear_completed():
-                        st.session_state["auto_reply_queue"] = []
-                        st.session_state["auto_reply_total"] = 0
-                        st.session_state["auto_reply_paused"] = False
-                    c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
-
-        elif st.session_state.get("autopilot_active"):
+        if st.session_state.get("autopilot_active") and not st.session_state.get("auto_reply_queue"):
             st.divider()
             next_run = st.session_state.get("autopilot_next_run", time.time())
             remaining = int(next_run - time.time())
@@ -802,6 +803,7 @@ Output ONLY the reply text."""
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
                                     except Exception as e:
+                                        st.session_state["ai_errors"][comment_id] = str(e)
                                         st.error(f"Service unavailable: {e}")
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
@@ -809,7 +811,11 @@ Output ONLY the reply text."""
                         ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
                         ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
-                    st.caption("Manual Override")
+                    if comment_id in st.session_state.get("ai_errors", {}):
+                        st.caption(f"⚠️ **AI Skipped:** {st.session_state['ai_errors'][comment_id]}")
+                    else:
+                        st.caption("✎ Custom Manual Reply")
+                        
                     st.text_area("Manual Reply", placeholder="Write a personal response...", height=60, label_visibility="collapsed", key=f"text_{comment_id}")
                     cm1, cm2 = st.columns([6, 1])
                     if cm2.button("Send ➤", key=f"manual_{comment_id}", use_container_width=True):
@@ -823,6 +829,8 @@ Output ONLY the reply text."""
                                 
                                 st.session_state["replied_comments"].add(comment_id)
                                 st.session_state["sent_replies_log"][comment_id] = manual_text
+                                if comment_id in st.session_state.get("ai_errors", {}):
+                                    del st.session_state["ai_errors"][comment_id]
                                 st.rerun()
                             except Exception:
                                 st.error("Network communication failed.")
@@ -895,6 +903,7 @@ Output ONLY the reply text."""
                 st.session_state["auto_reply_success"] += 1
 
             except Exception as e:
+                st.session_state["ai_errors"][comment_id] = str(e)
                 print(f"Auto-reply error: {e}")
             
             st.session_state["auto_reply_queue"].pop(0)
