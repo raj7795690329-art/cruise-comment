@@ -281,16 +281,16 @@ if st.session_state.get("youtube_creds") is not None:
         channel_logo = st.session_state["channel_logo"]
         
         if channel_id:
-            # Deep fetch logic: grabs up to 500 chronological comments to ensure older videos are cached
             if not st.session_state.get("channel_comments") or st.session_state.get("force_fetch"):
                 with st.spinner("Fetching latest channel activity..."):
                     fetched_comments = []
                     next_token = None
-                    # 5 pages * 100 comments = 500 comments (Costs 5 API Quota points)
+                    
+                    # Fetching 5 pages with the 'replies' object to accurately detect channel owner engagement
                     for _ in range(5):
                         try:
                             req = youtube.commentThreads().list(
-                                part="snippet",
+                                part="snippet,replies",
                                 allThreadsRelatedToChannelId=channel_id,
                                 maxResults=100,
                                 order="time",
@@ -328,9 +328,28 @@ if st.session_state.get("youtube_creds") is not None:
             
             live_comments = st.session_state["channel_comments"]
             
+            # --- Strict Owner Verification Logic ---
             for item in live_comments:
                 cid = item["id"]
-                if item["snippet"].get("totalReplyCount", 0) > 0:
+                top_comment_snippet = item["snippet"]["topLevelComment"]["snippet"]
+                author_id = top_comment_snippet.get("authorChannelId", {}).get("value", "")
+                
+                owner_replied = False
+                
+                # Check 1: Did the channel owner write the top-level comment? (Self-post)
+                if author_id == channel_id:
+                    owner_replied = True
+                
+                # Check 2: Did the channel owner post a reply within the thread?
+                elif item["snippet"].get("totalReplyCount", 0) > 0:
+                    if "replies" in item:
+                        for reply in item["replies"].get("comments", []):
+                            reply_author = reply["snippet"].get("authorChannelId", {}).get("value", "")
+                            if reply_author == channel_id:
+                                owner_replied = True
+                                break
+                
+                if owner_replied:
                     st.session_state["replied_comments"].add(cid)
                     if cid not in st.session_state["sent_replies_log"]:
                         st.session_state["sent_replies_log"][cid] = "Previously replied on YouTube."
@@ -410,7 +429,6 @@ if st.session_state.get("youtube_creds") is not None:
         st.metric("Replies Handled", handled_count)
         st.metric("Need Attention", pending_count)
 
-        # STAGNANT PROGRESS DASHBOARD MOVED TO SIDEBAR 
         if st.session_state.get("auto_reply_total") > 0:
             st.divider()
             st.subheader("🚀 Cruising Progress")
@@ -484,7 +502,7 @@ if st.session_state.get("youtube_creds") is not None:
                     st.session_state["context_locked"] = False
                     st.rerun()
 
-        # SMART VIDEO SORTING & DYNAMIC COUNTERS (Zero-comments filtered)
+        # SMART VIDEO SORTING & DYNAMIC COUNTERS
         all_comments_for_dropdown = st.session_state.get("channel_comments", [])
         unique_video_ids = list(set([c["snippet"]["topLevelComment"]["snippet"].get("videoId", "") for c in all_comments_for_dropdown if c["snippet"]["topLevelComment"]["snippet"].get("videoId")]))
         
@@ -498,7 +516,6 @@ if st.session_state.get("youtube_creds") is not None:
             ]
             video_unresponded_counts[vid] = len(pending_for_vid)
 
-        # STRICT FILTER: Only keep videos in dropdown that have > 0 pending comments
         active_vids = [v for v in unique_video_ids if video_unresponded_counts[v] > 0]
         sorted_vids = sorted(active_vids, key=lambda v: video_unresponded_counts[v], reverse=True)
         
@@ -539,7 +556,8 @@ if st.session_state.get("youtube_creds") is not None:
             selected_video_title = st.selectbox("Video Filter", video_options, index=video_options.index(current_selection))
             st.session_state["selected_video_filter"] = selected_video_title
         with col_f:
-            filter_view = st.selectbox("View", ["All Comments", "Unresponded", "Handled"])
+            # Re-ordered so 'Unresponded' is the immediate default view to hide Handled items natively
+            filter_view = st.selectbox("View", ["Unresponded", "All Comments", "Handled"])
         with col_s:
             sort_order = st.selectbox("Sort", ["Newest to Oldest", "Oldest to Newest", "Video Name (A-Z)"])
         with col_m:
@@ -557,7 +575,6 @@ if st.session_state.get("youtube_creds") is not None:
         with col_l:
             reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5)
 
-        # Apply Local Filters (Does not trigger Google API calls)
         display_comments = live_comments
         active_filter = st.session_state["selected_video_filter"]
         target_vid = video_mapping.get(active_filter)
