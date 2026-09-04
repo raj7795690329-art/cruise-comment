@@ -132,7 +132,8 @@ defaults = {
     "autopilot_active": False,
     "autopilot_interval": 5,
     "force_fetch": True,
-    "session_visible_handled": set()
+    "session_visible_handled": set(),
+    "queue_warning": None
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -373,6 +374,7 @@ if st.session_state.get("youtube_creds") is not None:
 
     def resume_auto_reply():
         st.session_state["auto_reply_paused"] = False
+        st.session_state.pop("queue_warning", None)
 
     def force_refresh_comments():
         st.session_state["force_fetch"] = True
@@ -402,6 +404,10 @@ if st.session_state.get("youtube_creds") is not None:
         if st.session_state.get("auto_reply_total") > 0:
             st.divider()
             st.subheader("🚀 Cruising Progress")
+            
+            if st.session_state.get("queue_warning"):
+                st.error(st.session_state["queue_warning"])
+
             total = st.session_state["auto_reply_total"]
             left = len(st.session_state["auto_reply_queue"])
             processed = total - left
@@ -427,6 +433,7 @@ if st.session_state.get("youtube_creds") is not None:
                             st.session_state["auto_reply_queue"] = []
                             st.session_state["auto_reply_total"] = 0
                             st.session_state["auto_reply_paused"] = False
+                            st.session_state.pop("queue_warning", None)
                         st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
             else:
                 c3, c4 = st.columns([7, 3])
@@ -435,6 +442,7 @@ if st.session_state.get("youtube_creds") is not None:
                     st.session_state["auto_reply_queue"] = []
                     st.session_state["auto_reply_total"] = 0
                     st.session_state["auto_reply_paused"] = False
+                    st.session_state.pop("queue_warning", None)
                 c4.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
 
         st.divider()
@@ -670,7 +678,7 @@ if st.session_state.get("youtube_creds") is not None:
                         st.session_state["last_scrolled_id"] = comment_id
                     continue 
 
-                if comment_id in handled_set:
+                if comment_id in handled_set and comment_id not in st.session_state.get("ai_errors", {}):
                     sent_text = st.session_state.get("sent_replies_log", {}).get(comment_id, "Previously replied on YouTube.")
                     
                     with st.container(border=True):
@@ -795,7 +803,7 @@ Output ONLY the reply text."""
                         ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
                     if comment_id in st.session_state.get("ai_errors", {}):
-                        st.caption(f"⚠️ **AI Skipped:** {st.session_state['ai_errors'][comment_id]}")
+                        st.error(f"🛑 **Queue Halted / AI Error:** {st.session_state['ai_errors'][comment_id]}")
                     else:
                         st.caption("✎ Custom Manual Reply")
                         
@@ -910,16 +918,16 @@ Output ONLY the reply text."""
                 err_str = str(e)
                 retry_count = current_item.get("retry_count", 0)
                 
-                # Smart Auto-Cooldown Engine
-                if "429" in err_str and retry_count < 2:
+                if "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                    st.toast("⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds...")
+                    st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
                     time.sleep(30)
                     st.rerun() 
                 else:
-                    st.session_state["ai_errors"][comment_id] = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
-                    st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(4)
+                    error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
+                    st.session_state["ai_errors"][comment_id] = error_msg
+                    st.session_state["auto_reply_paused"] = True
+                    st.session_state["queue_warning"] = f"🛑 Queue halted: {error_msg}"
                     st.rerun()
 
         # --- AUTOPILOT ---
@@ -1179,7 +1187,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
