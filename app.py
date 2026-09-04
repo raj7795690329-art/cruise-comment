@@ -131,7 +131,8 @@ defaults = {
     "last_scrolled_id": None,
     "autopilot_active": False,
     "autopilot_interval": 5,
-    "force_fetch": True
+    "force_fetch": True,
+    "session_visible_handled": set()  # Keeps newly handled comments visible
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -376,6 +377,7 @@ if st.session_state.get("youtube_creds") is not None:
     def force_refresh_comments():
         st.session_state["force_fetch"] = True
         st.session_state.pop("channel_comments", None)
+        st.session_state["session_visible_handled"] = set()
 
     # --- Sidebar ---
     with st.sidebar:
@@ -390,6 +392,7 @@ if st.session_state.get("youtube_creds") is not None:
         c1, c2 = st.columns([7, 3])
         if c1.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
+            st.session_state["session_visible_handled"] = set()
             if os.path.exists(TOKENS_FILE):
                 os.remove(TOKENS_FILE)
             st.rerun()
@@ -582,8 +585,10 @@ if st.session_state.get("youtube_creds") is not None:
         if target_vid is not None:
             display_comments = [c for c in display_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == target_vid]
 
-        if filter_view == "Unresponded": display_comments = [c for c in display_comments if c["id"] not in handled_set]
-        elif filter_view == "Handled": display_comments = [c for c in display_comments if c["id"] in handled_set]
+        if filter_view == "Unresponded": 
+            display_comments = [c for c in display_comments if c["id"] not in handled_set or c["id"] in st.session_state.get("session_visible_handled", set())]
+        elif filter_view == "Handled": 
+            display_comments = [c for c in display_comments if c["id"] in handled_set]
 
         if sort_order == "Newest to Oldest": display_comments = sorted(display_comments, key=lambda x: x["snippet"]["topLevelComment"]["snippet"]["publishedAt"], reverse=True)
         elif sort_order == "Oldest to Newest": display_comments = sorted(display_comments, key=lambda x: x["snippet"]["topLevelComment"]["snippet"]["publishedAt"], reverse=False)
@@ -706,6 +711,7 @@ if st.session_state.get("youtube_creds") is not None:
                                     
                                     st.session_state["replied_comments"].add(comment_id)
                                     st.session_state["sent_replies_log"][comment_id] = final_reply
+                                    st.session_state["session_visible_handled"].add(comment_id)
                                     st.rerun() 
                                 except Exception:
                                     st.error("Network communication failed.")
@@ -804,6 +810,7 @@ Output ONLY the reply text."""
                                 
                                 st.session_state["replied_comments"].add(comment_id)
                                 st.session_state["sent_replies_log"][comment_id] = manual_text
+                                st.session_state["session_visible_handled"].add(comment_id)
                                 if comment_id in st.session_state.get("ai_errors", {}):
                                     del st.session_state["ai_errors"][comment_id]
                                 st.rerun()
@@ -890,6 +897,7 @@ Output ONLY the reply text."""
                 
                 st.session_state["replied_comments"].add(comment_id)
                 st.session_state["sent_replies_log"][comment_id] = final_reply
+                st.session_state["session_visible_handled"].add(comment_id)
                 st.session_state["auto_reply_success"] += 1
 
             except Exception as e:
@@ -1155,7 +1163,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
