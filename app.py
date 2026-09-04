@@ -286,7 +286,6 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    # Fetching 5 pages with the 'replies' object to accurately detect channel owner engagement
                     for _ in range(5):
                         try:
                             req = youtube.commentThreads().list(
@@ -328,7 +327,6 @@ if st.session_state.get("youtube_creds") is not None:
             
             live_comments = st.session_state["channel_comments"]
             
-            # --- Strict Owner Verification Logic ---
             for item in live_comments:
                 cid = item["id"]
                 top_comment_snippet = item["snippet"]["topLevelComment"]["snippet"]
@@ -336,11 +334,8 @@ if st.session_state.get("youtube_creds") is not None:
                 
                 owner_replied = False
                 
-                # Check 1: Did the channel owner write the top-level comment? (Self-post)
                 if author_id == channel_id:
                     owner_replied = True
-                
-                # Check 2: Did the channel owner post a reply within the thread?
                 elif item["snippet"].get("totalReplyCount", 0) > 0:
                     if "replies" in item:
                         for reply in item["replies"].get("comments", []):
@@ -400,6 +395,38 @@ if st.session_state.get("youtube_creds") is not None:
         if c2.button("🔄", help="Refresh latest comments", on_click=force_refresh_comments, use_container_width=True):
             pass
             
+        # TOP-LEVEL DASHBOARD RELOCATION
+        if st.session_state.get("auto_reply_total") > 0:
+            st.divider()
+            st.subheader("🚀 Cruising Progress")
+            total = st.session_state["auto_reply_total"]
+            left = len(st.session_state["auto_reply_queue"])
+            done = total - left
+            
+            st.progress(done / total if total > 0 else 0.0)
+            st.write(f"**{done} of {total} sent.**")
+            
+            if left > 0:
+                if not st.session_state.get("auto_reply_paused"):
+                    st.button("🛑 Pause", on_click=pause_auto_reply, use_container_width=True)
+                else:
+                    c3, c4 = st.columns(2)
+                    with c3: st.button("▶ Resume", on_click=resume_auto_reply, use_container_width=True)
+                    with c4: 
+                        def cancel_queue():
+                            st.session_state["auto_reply_queue"] = []
+                            st.session_state["auto_reply_total"] = 0
+                            st.session_state["auto_reply_paused"] = False
+                        st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
+            else:
+                c3, c4 = st.columns([7, 3])
+                c3.button("✅ Completed", disabled=True, use_container_width=True)
+                def clear_completed():
+                    st.session_state["auto_reply_queue"] = []
+                    st.session_state["auto_reply_total"] = 0
+                    st.session_state["auto_reply_paused"] = False
+                c4.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
+
         st.divider()
         st.title("Instagram")
         st.button("Connect Instagram (BETA)", disabled=True, use_container_width=True)
@@ -428,38 +455,6 @@ if st.session_state.get("youtube_creds") is not None:
         st.metric("Total Fetched Comments", total_fetched)
         st.metric("Replies Handled", handled_count)
         st.metric("Need Attention", pending_count)
-
-        if st.session_state.get("auto_reply_total") > 0:
-            st.divider()
-            st.subheader("🚀 Cruising Progress")
-            total = st.session_state["auto_reply_total"]
-            left = len(st.session_state["auto_reply_queue"])
-            done = total - left
-            
-            st.progress(done / total if total > 0 else 0.0)
-            st.write(f"**{done} of {total} sent.**")
-            
-            if left > 0:
-                if not st.session_state.get("auto_reply_paused"):
-                    st.button("🛑 Pause", on_click=pause_auto_reply, use_container_width=True)
-                else:
-                    c1, c2 = st.columns(2)
-                    with c1: st.button("▶ Resume", on_click=resume_auto_reply, use_container_width=True)
-                    with c2: 
-                        def cancel_queue():
-                            st.session_state["auto_reply_queue"] = []
-                            st.session_state["auto_reply_total"] = 0
-                            st.session_state["auto_reply_paused"] = False
-                        st.button("❌ Cancel", type="primary", on_click=cancel_queue, use_container_width=True)
-            else:
-                c1, c2 = st.columns([7, 3])
-                c1.button("✅ Completed", disabled=True, use_container_width=True)
-                def clear_completed():
-                    st.session_state["auto_reply_queue"] = []
-                    st.session_state["auto_reply_total"] = 0
-                    st.session_state["auto_reply_paused"] = False
-                c2.button("❌ Close", type="primary", on_click=clear_completed, help="Close Queue Widget", use_container_width=True)
-
 
     def set_video_filter(target_option):
         st.session_state["selected_video_filter"] = target_option
@@ -556,7 +551,6 @@ if st.session_state.get("youtube_creds") is not None:
             selected_video_title = st.selectbox("Video Filter", video_options, index=video_options.index(current_selection))
             st.session_state["selected_video_filter"] = selected_video_title
         with col_f:
-            # Re-ordered so 'Unresponded' is the immediate default view to hide Handled items natively
             filter_view = st.selectbox("View", ["Unresponded", "All Comments", "Handled"])
         with col_s:
             sort_order = st.selectbox("Sort", ["Newest to Oldest", "Oldest to Newest", "Video Name (A-Z)"])
@@ -756,10 +750,29 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        response = client.models.generate_content(
-                                            model="gemini-3.6-flash", 
-                                            contents=prompt
-                                        )
+                                        # Exponential backoff and model fallback engine
+                                        models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash"]
+                                        response = None
+                                        last_error = None
+                                        
+                                        for model_name in models_to_try:
+                                            try:
+                                                response = client.models.generate_content(
+                                                    model=model_name, 
+                                                    contents=prompt
+                                                )
+                                                break
+                                            except Exception as inner_e:
+                                                last_error = inner_e
+                                                if "503" in str(inner_e):
+                                                    time.sleep(2)
+                                                    continue
+                                                else:
+                                                    raise inner_e
+                                                    
+                                        if not response:
+                                            raise last_error
+                                            
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
                                     except Exception as e:
@@ -847,10 +860,29 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                response = client.models.generate_content(
-                    model="gemini-3.6-flash", 
-                    contents=prompt
-                )
+                # Exponential backoff and model fallback engine
+                models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash"]
+                response = None
+                last_error = None
+                
+                for model_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name, 
+                            contents=prompt
+                        )
+                        break
+                    except Exception as inner_e:
+                        last_error = inner_e
+                        if "503" in str(inner_e):
+                            time.sleep(2)
+                            continue
+                        else:
+                            raise inner_e
+                            
+                if not response:
+                    raise last_error
+
                 final_reply = response.text.strip()
                 
                 youtube.comments().insert(
@@ -975,7 +1007,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.6-flash", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1080,7 +1112,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.6-flash", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
