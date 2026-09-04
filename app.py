@@ -118,7 +118,7 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
-    "active_ai_model": "gemini-3.6-flash", # Sticky fallback tracking
+    "active_ai_model": "gemini-3.6-flash", 
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -401,10 +401,17 @@ if st.session_state.get("youtube_creds") is not None:
             st.subheader("🚀 Cruising Progress")
             total = st.session_state["auto_reply_total"]
             left = len(st.session_state["auto_reply_queue"])
-            done = total - left
+            processed = total - left
+            success = st.session_state.get("auto_reply_success", 0)
+            failed = processed - success
             
-            st.progress(done / total if total > 0 else 0.0)
-            st.write(f"**{done} of {total} sent.**")
+            prog_pct = int((processed / total) * 100) if total > 0 else 0
+            sent_pct = int((success / total) * 100) if total > 0 else 0
+            fail_pct = int((failed / total) * 100) if total > 0 else 0
+            
+            st.progress(processed / total if total > 0 else 0.0)
+            st.write(f"**Processed: {processed}/{total} ({prog_pct}%)**")
+            st.write(f"✅ Sent: {success} ({sent_pct}%) | ⚠️ Errors: {failed} ({fail_pct}%)")
             
             if left > 0:
                 if not st.session_state.get("auto_reply_paused"):
@@ -756,9 +763,10 @@ Output ONLY the reply text."""
                                                 contents=prompt
                                             )
                                         except Exception as inner_e:
-                                            if "503" in str(inner_e) and active_model == "gemini-3.6-flash":
+                                            err_str = str(inner_e)
+                                            if ("503" in err_str or "429" in err_str) and active_model == "gemini-3.6-flash":
                                                 st.session_state["active_ai_model"] = "gemini-3.5-flash"
-                                                st.toast("High demand detected. Switching AI engine to 3.5-flash.")
+                                                st.toast("Capacity/Quota limit reached. Switching AI engine to 3.5-flash.")
                                                 time.sleep(2)
                                                 response = client.models.generate_content(
                                                     model="gemini-3.5-flash", 
@@ -861,9 +869,10 @@ Output ONLY the reply text."""
                         contents=prompt
                     )
                 except Exception as inner_e:
-                    if "503" in str(inner_e) and active_model == "gemini-3.6-flash":
+                    err_str = str(inner_e)
+                    if ("503" in err_str or "429" in err_str) and active_model == "gemini-3.6-flash":
                         st.session_state["active_ai_model"] = "gemini-3.5-flash"
-                        st.toast("High demand detected. Switching AI engine to 3.5-flash.")
+                        st.toast("Capacity/Quota limit reached. Switching AI engine to 3.5-flash.")
                         time.sleep(2)
                         response = client.models.generate_content(
                             model="gemini-3.5-flash", 
@@ -888,8 +897,6 @@ Output ONLY the reply text."""
                 print(f"Auto-reply error: {e}")
             
             st.session_state["auto_reply_queue"].pop(0)
-            
-            # Pacing sleep to strictly respect the 20 RPM Free Tier Limit (1 request per 4 seconds = 15 RPM)
             time.sleep(4)
             st.rerun()
 
@@ -998,7 +1005,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.6-flash", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1103,7 +1110,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.6-flash", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
