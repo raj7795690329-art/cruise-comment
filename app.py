@@ -118,6 +118,7 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
+    "active_ai_model": "gemini-3.6-flash", # Sticky fallback tracking
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -395,7 +396,6 @@ if st.session_state.get("youtube_creds") is not None:
         if c2.button("🔄", help="Refresh latest comments", on_click=force_refresh_comments, use_container_width=True):
             pass
             
-        # TOP-LEVEL DASHBOARD RELOCATION
         if st.session_state.get("auto_reply_total") > 0:
             st.divider()
             st.subheader("🚀 Cruising Progress")
@@ -497,7 +497,6 @@ if st.session_state.get("youtube_creds") is not None:
                     st.session_state["context_locked"] = False
                     st.rerun()
 
-        # SMART VIDEO SORTING & DYNAMIC COUNTERS
         all_comments_for_dropdown = st.session_state.get("channel_comments", [])
         unique_video_ids = list(set([c["snippet"]["topLevelComment"]["snippet"].get("videoId", "") for c in all_comments_for_dropdown if c["snippet"]["topLevelComment"]["snippet"].get("videoId")]))
         
@@ -750,29 +749,24 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        # Exponential backoff and model fallback engine
-                                        models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash"]
-                                        response = None
-                                        last_error = None
-                                        
-                                        for model_name in models_to_try:
-                                            try:
+                                        active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
+                                        try:
+                                            response = client.models.generate_content(
+                                                model=active_model, 
+                                                contents=prompt
+                                            )
+                                        except Exception as inner_e:
+                                            if "503" in str(inner_e) and active_model == "gemini-3.6-flash":
+                                                st.session_state["active_ai_model"] = "gemini-3.5-flash"
+                                                st.toast("High demand detected. Switching AI engine to 3.5-flash.")
+                                                time.sleep(2)
                                                 response = client.models.generate_content(
-                                                    model=model_name, 
+                                                    model="gemini-3.5-flash", 
                                                     contents=prompt
                                                 )
-                                                break
-                                            except Exception as inner_e:
-                                                last_error = inner_e
-                                                if "503" in str(inner_e):
-                                                    time.sleep(2)
-                                                    continue
-                                                else:
-                                                    raise inner_e
-                                                    
-                                        if not response:
-                                            raise last_error
-                                            
+                                            else:
+                                                raise inner_e
+
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
                                     except Exception as e:
@@ -860,28 +854,23 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                # Exponential backoff and model fallback engine
-                models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash"]
-                response = None
-                last_error = None
-                
-                for model_name in models_to_try:
-                    try:
+                active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
+                try:
+                    response = client.models.generate_content(
+                        model=active_model, 
+                        contents=prompt
+                    )
+                except Exception as inner_e:
+                    if "503" in str(inner_e) and active_model == "gemini-3.6-flash":
+                        st.session_state["active_ai_model"] = "gemini-3.5-flash"
+                        st.toast("High demand detected. Switching AI engine to 3.5-flash.")
+                        time.sleep(2)
                         response = client.models.generate_content(
-                            model=model_name, 
+                            model="gemini-3.5-flash", 
                             contents=prompt
                         )
-                        break
-                    except Exception as inner_e:
-                        last_error = inner_e
-                        if "503" in str(inner_e):
-                            time.sleep(2)
-                            continue
-                        else:
-                            raise inner_e
-                            
-                if not response:
-                    raise last_error
+                    else:
+                        raise inner_e
 
                 final_reply = response.text.strip()
                 
@@ -899,7 +888,9 @@ Output ONLY the reply text."""
                 print(f"Auto-reply error: {e}")
             
             st.session_state["auto_reply_queue"].pop(0)
-            time.sleep(1)
+            
+            # Pacing sleep to strictly respect the 20 RPM Free Tier Limit (1 request per 4 seconds = 15 RPM)
+            time.sleep(4)
             st.rerun()
 
         # --- AUTOPILOT ---
@@ -1007,7 +998,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-3.6-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1112,7 +1103,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-3.6-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
