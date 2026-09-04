@@ -132,7 +132,7 @@ defaults = {
     "autopilot_active": False,
     "autopilot_interval": 5,
     "force_fetch": True,
-    "session_visible_handled": set()  # Keeps newly handled comments visible
+    "session_visible_handled": set()
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -606,6 +606,8 @@ if st.session_state.get("youtube_creds") is not None:
                     else:
                         limit = len(pending_in_view) if reply_limit_str == "All" else int(reply_limit_str)
                         st.session_state["auto_reply_queue"] = pending_in_view[:limit]
+                        for c_item in st.session_state["auto_reply_queue"]:
+                            c_item["retry_count"] = 0
                         st.session_state["auto_reply_total"] = limit
                         st.session_state["auto_reply_success"] = 0
                         st.session_state["auto_reply_paused"] = False 
@@ -899,14 +901,26 @@ Output ONLY the reply text."""
                 st.session_state["sent_replies_log"][comment_id] = final_reply
                 st.session_state["session_visible_handled"].add(comment_id)
                 st.session_state["auto_reply_success"] += 1
+                
+                st.session_state["auto_reply_queue"].pop(0)
+                time.sleep(4)
+                st.rerun()
 
             except Exception as e:
-                st.session_state["ai_errors"][comment_id] = str(e)
-                print(f"Auto-reply error: {e}")
-            
-            st.session_state["auto_reply_queue"].pop(0)
-            time.sleep(4)
-            st.rerun()
+                err_str = str(e)
+                retry_count = current_item.get("retry_count", 0)
+                
+                # Smart Auto-Cooldown Engine
+                if "429" in err_str and retry_count < 2:
+                    st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
+                    st.toast("⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds...")
+                    time.sleep(30)
+                    st.rerun() 
+                else:
+                    st.session_state["ai_errors"][comment_id] = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
+                    st.session_state["auto_reply_queue"].pop(0)
+                    time.sleep(4)
+                    st.rerun()
 
         # --- AUTOPILOT ---
         if st.session_state.get("autopilot_active") and not st.session_state.get("auto_reply_queue") and not st.session_state.get("auto_reply_paused"):
@@ -921,6 +935,8 @@ Output ONLY the reply text."""
                     if pending_auto:
                         limit = len(pending_auto) if reply_limit_str == "All" else int(reply_limit_str)
                         st.session_state["auto_reply_queue"] = pending_auto[:limit]
+                        for c_item in st.session_state["auto_reply_queue"]:
+                            c_item["retry_count"] = 0
                         st.session_state["auto_reply_total"] = len(st.session_state["auto_reply_queue"])
                         st.session_state["auto_reply_success"] = 0
                         st.toast("✈️ Autopilot found new comments! Starting replies...")
@@ -1163,7 +1179,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
