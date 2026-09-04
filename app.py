@@ -109,7 +109,7 @@ defaults = {
     "sent_replies_log": {},
     "processed_history": [], 
     "ai_drafts": {},
-    "ai_errors": {}, # New dict to explicitly catch skip reasons
+    "ai_errors": {}, 
     "user_gemini_api_key": saved_keys.get("api_key", ""),
     "user_client_id": saved_keys.get("client_id", ""),
     "user_client_secret": saved_keys.get("client_secret", ""),
@@ -123,14 +123,14 @@ defaults = {
     "selected_video_filter": "[0] All Videos",
     "video_mapping_cache": {},
     "channel_comments": [],
-    "master_comments_cache": [],
     "auto_reply_queue": [],   
     "auto_reply_total": 0,    
     "auto_reply_success": 0,
     "auto_reply_paused": False,
     "last_scrolled_id": None,
     "autopilot_active": False,
-    "autopilot_interval": 5
+    "autopilot_interval": 5,
+    "force_fetch": True
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -225,13 +225,11 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
             redirect_uri=APP_URL
         )
         
-        # Recover verifier securely from the background dictionary based on the Google State token
         if state_param:
             verifier = get_verifier(str(state_param))
             if verifier:
                 flow.code_verifier = verifier
                 
-        # Fallback to single file if dictionary lookup misses
         if not hasattr(flow, 'code_verifier') or not flow.code_verifier:
             if os.path.exists(".verifier"):
                 with open(".verifier", "r", encoding="utf-8") as f:
@@ -250,8 +248,8 @@ if "code" in query_params and st.session_state.get("youtube_creds") is None:
         }
         
         st.session_state["youtube_creds"] = creds_dict
+        st.session_state["force_fetch"] = True
         
-        # Save tokens securely to survive page refreshes
         with open(TOKENS_FILE, "w", encoding="utf-8") as f:
             json.dump(creds_dict, f)
         
@@ -283,65 +281,52 @@ if st.session_state.get("youtube_creds") is not None:
         channel_logo = st.session_state["channel_logo"]
         
         if channel_id:
-            is_replying = bool(st.session_state.get("auto_reply_queue"))
-            
-            if is_replying and "cached_live_comments" in st.session_state:
-                live_comments = st.session_state["cached_live_comments"]
-            else:
-                channel_req = youtube.commentThreads().list(
-                    part="snippet",
-                    allThreadsRelatedToChannelId=channel_id,
-                    maxResults=100, 
-                    textFormat="plainText"
-                ).execute()
-                st.session_state["channel_comments"] = channel_req.get("items", [])
-                
-                target_vid = None
-                selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
-                
-                if "] " in selected_filter_title:
-                    clean_filter_title = selected_filter_title.split("] ")[1].strip()
-                else:
-                    clean_filter_title = selected_filter_title
-
-                if clean_filter_title != "All Videos":
-                    for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
-                        if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
-                            target_vid = vid_id
+            # Deep fetch logic: grabs up to 500 chronological comments to ensure older videos are cached
+            if not st.session_state.get("channel_comments") or st.session_state.get("force_fetch"):
+                with st.spinner("Fetching latest channel activity..."):
+                    fetched_comments = []
+                    next_token = None
+                    # 5 pages * 100 comments = 500 comments (Costs 5 API Quota points)
+                    for _ in range(5):
+                        try:
+                            req = youtube.commentThreads().list(
+                                part="snippet",
+                                allThreadsRelatedToChannelId=channel_id,
+                                maxResults=100,
+                                order="time",
+                                textFormat="plainText",
+                                pageToken=next_token
+                            ).execute()
+                            fetched_comments.extend(req.get("items", []))
+                            next_token = req.get("nextPageToken")
+                            if not next_token:
+                                break
+                        except Exception:
                             break
+                            
+                    st.session_state["channel_comments"] = fetched_comments
+                    st.session_state["force_fetch"] = False
                     
-                if target_vid:
-                    vid_req = youtube.commentThreads().list(
-                        part="snippet",
-                        videoId=target_vid,
-                        maxResults=100, 
-                        textFormat="plainText"
-                    ).execute()
-                    live_comments = vid_req.get("items", [])
-                else:
-                    live_comments = st.session_state["channel_comments"]
-                
-                missing_vids = []
-                for item in st.session_state["channel_comments"] + live_comments:
-                    vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
-                    if vid and vid not in st.session_state["video_title_cache"]:
-                        missing_vids.append(vid)
-                
-                if missing_vids:
-                    unique_vids = list(set(missing_vids))[:50]
-                    try:
-                        vid_response = youtube.videos().list(
-                            part="snippet",
-                            id=",".join(unique_vids)
-                        ).execute()
-                        for v_item in vid_response.get("items", []):
-                            st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
-                            st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
-                    except Exception:
-                        pass
-                
-                st.session_state["cached_live_comments"] = live_comments
-                st.session_state["master_comments_cache"] = live_comments
+                    missing_vids = []
+                    for item in fetched_comments:
+                        vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
+                        if vid and vid not in st.session_state["video_title_cache"]:
+                            missing_vids.append(vid)
+                    
+                    if missing_vids:
+                        unique_vids = list(set(missing_vids))[:50]
+                        try:
+                            vid_response = youtube.videos().list(
+                                part="snippet",
+                                id=",".join(unique_vids)
+                            ).execute()
+                            for v_item in vid_response.get("items", []):
+                                st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
+                                st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
+                        except Exception:
+                            pass
+            
+            live_comments = st.session_state["channel_comments"]
             
             for item in live_comments:
                 cid = item["id"]
@@ -356,30 +341,7 @@ if st.session_state.get("youtube_creds") is not None:
         channel_id = st.session_state.get("channel_id")
         channel_name = st.session_state.get("channel_name", "YouTube Account")
         channel_logo = st.session_state.get("channel_logo", "")
-        
-        if st.session_state.get("master_comments_cache"):
-            live_comments = st.session_state["master_comments_cache"]
-        elif st.session_state.get("channel_comments"):
-            target_vid = None
-            selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
-            
-            if "] " in selected_filter_title:
-                clean_filter_title = selected_filter_title.split("] ")[1].strip()
-            else:
-                clean_filter_title = selected_filter_title
-
-            if clean_filter_title != "All Videos":
-                for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
-                    if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
-                        target_vid = vid_id
-                        break
-                
-            if target_vid:
-                live_comments = [c for c in st.session_state["channel_comments"] if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == target_vid]
-            else:
-                live_comments = st.session_state["channel_comments"]
-        else:
-            live_comments = []
+        live_comments = st.session_state.get("channel_comments", [])
 
     total_fetched = len(live_comments)
     handled_set = st.session_state.get("replied_comments", set())
@@ -396,6 +358,10 @@ if st.session_state.get("youtube_creds") is not None:
     def resume_auto_reply():
         st.session_state["auto_reply_paused"] = False
 
+    def force_refresh_comments():
+        st.session_state["force_fetch"] = True
+        st.session_state.pop("channel_comments", None)
+
     # --- Sidebar ---
     with st.sidebar:
         st.title("YouTube")
@@ -406,11 +372,14 @@ if st.session_state.get("youtube_creds") is not None:
             </div>
         """, unsafe_allow_html=True)
         
-        if st.button("⏻ Disconnect", use_container_width=True):
+        c1, c2 = st.columns([7, 3])
+        if c1.button("⏻ Disconnect", use_container_width=True):
             st.session_state["youtube_creds"] = None
             if os.path.exists(TOKENS_FILE):
                 os.remove(TOKENS_FILE)
             st.rerun()
+        if c2.button("🔄", help="Refresh latest comments", on_click=force_refresh_comments, use_container_width=True):
+            pass
             
         st.divider()
         st.title("Instagram")
@@ -432,7 +401,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["autopilot_next_run"] = time.time() 
             else:
                 st.session_state.pop("autopilot_next_run", None)
-                st.session_state.pop("autopilot_force_fetch", None)
+                st.session_state["force_fetch"] = False
             st.rerun()
             
         st.divider()
@@ -515,7 +484,7 @@ if st.session_state.get("youtube_creds") is not None:
                     st.session_state["context_locked"] = False
                     st.rerun()
 
-        # SMART VIDEO SORTING & DYNAMIC COUNTERS
+        # SMART VIDEO SORTING & DYNAMIC COUNTERS (Zero-comments filtered)
         all_comments_for_dropdown = st.session_state.get("channel_comments", [])
         unique_video_ids = list(set([c["snippet"]["topLevelComment"]["snippet"].get("videoId", "") for c in all_comments_for_dropdown if c["snippet"]["topLevelComment"]["snippet"].get("videoId")]))
         
@@ -529,9 +498,11 @@ if st.session_state.get("youtube_creds") is not None:
             ]
             video_unresponded_counts[vid] = len(pending_for_vid)
 
-        sorted_vids = sorted(unique_video_ids, key=lambda v: video_unresponded_counts[v], reverse=True)
-        total_pending_all = len([c for c in all_comments_for_dropdown if c["id"] not in handled_set])
+        # STRICT FILTER: Only keep videos in dropdown that have > 0 pending comments
+        active_vids = [v for v in unique_video_ids if video_unresponded_counts[v] > 0]
+        sorted_vids = sorted(active_vids, key=lambda v: video_unresponded_counts[v], reverse=True)
         
+        total_pending_all = len([c for c in all_comments_for_dropdown if c["id"] not in handled_set])
         all_videos_label = f"[{total_pending_all}] All Videos"
         video_options = [all_videos_label]
         video_mapping[all_videos_label] = None
@@ -549,7 +520,6 @@ if st.session_state.get("youtube_creds") is not None:
         st.session_state["video_mapping_cache"] = video_mapping
         current_selection = st.session_state.get("selected_video_filter", all_videos_label)
         
-        # Ensure dropdown syncs accurately
         current_base = current_selection.split("] ")[1] if "] " in current_selection else current_selection
         matched_opt = all_videos_label
         for opt in video_options:
@@ -563,7 +533,6 @@ if st.session_state.get("youtube_creds") is not None:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
         
-        # Adjusted column widths to prevent text truncation in dropdowns
         col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.8, 1.1, 1.5, 1.1, 1.1, 1.4, 0.9, 1.6], vertical_alignment="bottom")
         
         with col_v:
@@ -588,6 +557,7 @@ if st.session_state.get("youtube_creds") is not None:
         with col_l:
             reply_limit_str = st.selectbox("Limit", ["5", "10", "20", "50", "100", "All"], index=5)
 
+        # Apply Local Filters (Does not trigger Google API calls)
         display_comments = live_comments
         active_filter = st.session_state["selected_video_filter"]
         target_vid = video_mapping.get(active_filter)
@@ -621,32 +591,6 @@ if st.session_state.get("youtube_creds") is not None:
                 else:
                     st.error("API Key missing. Please provide an API key in Setup.")
 
-        if st.session_state.get("autopilot_active") and not st.session_state.get("auto_reply_queue"):
-            st.divider()
-            next_run = st.session_state.get("autopilot_next_run", time.time())
-            remaining = int(next_run - time.time())
-            if remaining < 0: remaining = 0
-            
-            interval_sec = st.session_state.get("autopilot_interval", 5) * 60
-            prog = 1.0 - (remaining / interval_sec)
-            if prog < 0.0: prog = 0.0
-            if prog > 1.0: prog = 1.0
-            
-            p_col, b_col = st.columns([7.5, 2.5], vertical_alignment="center")
-            with p_col:
-                if st.session_state.get("autopilot_force_fetch"):
-                    st.write(f"✈️ **Autopilot Active: Scanning YouTube for new comments...**")
-                    st.progress(1.0)
-                else:
-                    st.write(f"✈️ **Autopilot Active: Sleeping. Next scan in {remaining}s...**")
-                    st.progress(prog)
-            with b_col:
-                if st.button("🛑 Stop Autopilot", type="primary", use_container_width=True):
-                    st.session_state["autopilot_active"] = False
-                    st.session_state.pop("autopilot_next_run", None)
-                    st.session_state.pop("autopilot_force_fetch", None)
-                    st.rerun()
-
         is_replying_active = bool(st.session_state.get("auto_reply_queue"))
         processing_id = None
         if is_replying_active and not st.session_state.get("auto_reply_paused"):
@@ -679,7 +623,6 @@ if st.session_state.get("youtube_creds") is not None:
                     with st.container(border=True):
                         st.markdown(f'<div id="processing-card-{comment_id}"></div>', unsafe_allow_html=True)
                         
-                        # Added animated spinner specifically for the drafting phase
                         st.markdown("""
                             <div style='display: flex; align-items: center; color: #FF9500; font-weight: 700; margin-bottom: 12px; font-size: 14px;'>
                                 <div style='border: 3px solid rgba(255,149,0,0.3); border-top: 3px solid #FF9500; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; margin-right: 10px;'></div>
@@ -916,7 +859,8 @@ Output ONLY the reply text."""
             
             if time.time() >= next_run:
                 if st.session_state.get("autopilot_force_fetch"):
-                    st.session_state["autopilot_force_fetch"] = False
+                    st.session_state["force_fetch"] = True
+                    st.session_state.pop("channel_comments", None)
                     
                     pending_auto = [c for c in display_comments if c["id"] not in handled_set]
                     if pending_auto:
@@ -933,8 +877,7 @@ Output ONLY the reply text."""
                         st.rerun()
                 else:
                     st.session_state["autopilot_force_fetch"] = True
-                    st.session_state.pop("master_comments_cache", None)
-                    st.session_state.pop("cached_live_comments", None)
+                    st.session_state["force_fetch"] = True
                     st.session_state.pop("channel_comments", None)
                     st.rerun()
             else:
