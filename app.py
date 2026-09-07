@@ -1,8 +1,5 @@
 import streamlit as st
 import os
-import json
-import base64
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
 from google_auth_oauthlib.flow import Flow
@@ -11,27 +8,14 @@ import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
 
-# --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
+# --- Open the secure vault ---
 load_dotenv()
+MASTER_API_KEY = os.getenv("GEMINI_API_KEY")
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-def get_secret(key, default=None):
-    # Check local .env first
-    if key in os.environ and os.environ[key]:
-        return os.environ[key]
-    # Check Streamlit Cloud Secrets second
-    try:
-        if key in st.secrets and st.secrets[key]:
-            return st.secrets[key]
-    except Exception:
-        pass
-    return default
-
-MASTER_API_KEY = get_secret("GEMINI_API_KEY")
-CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
-
-# Dynamic Routing: Uses Cloud URL unless REDIRECT_URI is explicitly set in .env for localhost
-REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app") 
+# Dynamic Routing. It will use your live URL if available, otherwise defaults to local testing.
+REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501") 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -1007,27 +991,22 @@ if st.session_state.get("youtube_creds") is not None:
                 parsed_date = datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
                 formatted_date = parsed_date.strftime("%b %d, %Y · %I:%M %p")
                 relative_time = get_relative_time(parsed_date)
-                vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Video")
                 
                 if comment_id == processing_id:
-                    with st.container(border=True):
-                        st.markdown(f'<div id="processing-card-{comment_id}"></div>', unsafe_allow_html=True)
-                        
-                        st.markdown("""
-                            <div style='display: flex; align-items: center; color: #FF9500; font-weight: 700; margin-bottom: 12px; font-size: 14px; letter-spacing: 0.05em;'>
+                    st.markdown(f"""
+                        <div id="processing-card-{comment_id}" style="background-color: #F8F8FA; border: 2px solid #111; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+                            <div style="font-size: 12px; font-weight: 700; color: #111; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; letter-spacing: 0.05em;">
                                 <span class="status-dot" style="background-color: #FF9500 !important; animation: subtlePulse 1.5s infinite ease-in-out;"></span>
                                 CRUISING... DRAFTING REPLY
                             </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.markdown(f"""
-                        <div class="comment-header">
-                            <span class="comment-author">{author}</span>
-                            <span class="comment-date">{formatted_date}</span>
+                            <div class="comment-header">
+                                <span class="comment-author">{author}</span>
+                                <span class="comment-date">{formatted_date}</span>
+                            </div>
+                            <div class="comment-text" style="color: #444; margin-bottom: 0;">"{text}"</div>
                         </div>
-                        <div class="comment-text" style="color: #444; margin-bottom: 0;">"{text}"</div>
-                        """, unsafe_allow_html=True)
-                        
+                    """, unsafe_allow_html=True)
+                    
                     if st.session_state.get("last_scrolled_id") != comment_id:
                         components.html(f"""
                             <script>
@@ -1070,7 +1049,6 @@ if st.session_state.get("youtube_creds") is not None:
                     continue
                 
                 with st.container(border=True):
-                    
                     st.button(
                         f"▶ Filter to this Video", 
                         key=f"vt_pending_{comment_id}", 
@@ -1141,6 +1119,7 @@ if st.session_state.get("youtube_creds") is not None:
                                             chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                             
                                             single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
+                                            # Truncate description to 800 characters to prevent Token Overload / slow generation
                                             single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
 
                                             ambient_prompt_section = ""
@@ -1179,6 +1158,7 @@ Criteria:
 
 Output ONLY the reply text."""
                                             
+                                            # Using a real, high-speed model
                                             response = client.models.generate_content(
                                                 model="gemini-1.5-flash", 
                                                 contents=prompt
@@ -1300,7 +1280,7 @@ Output ONLY the reply text."""
             
             # Pop the queue so it actually moves to the next comment
             st.session_state["auto_reply_queue"].pop(0)
-            time.sleep(4) # Enforce 4-second pace for 15 RPM
+            time.sleep(1) # Safety delay to prevent YouTube API bans
             st.rerun()
 
         # --- AUTOPILOT ---
