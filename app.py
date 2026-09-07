@@ -118,6 +118,7 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
+    "active_ai_model": "gemini-1.5-flash-latest", 
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -605,7 +606,8 @@ if st.session_state.get("youtube_creds") is not None:
             is_replying_btn = bool(st.session_state.get("auto_reply_queue"))
             btn_text = "🤖 Auto-Replying..." if is_replying_btn else "🤖 Reply All with AI"
             if st.button(btn_text, disabled=is_replying_btn, use_container_width=True):
-                active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
+                # UI Key priority logic
+                active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
                 if active_key:
                     pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
                     if not pending_in_view:
@@ -729,7 +731,7 @@ if st.session_state.get("youtube_creds") is not None:
                     else:
                         ca_btn, ca_mood, ca_len = st.columns([2, 2, 2], vertical_alignment="bottom")
                         if ca_btn.button("🤖 Draft AI Reply", key=f"ai_{comment_id}", use_container_width=True):
-                            active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
+                            active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
@@ -772,11 +774,34 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        # Natively using the stable 1.5-flash to completely avoid 20/day limit exhaustion
-                                        response = client.models.generate_content(
-                                            model="gemini-1.5-flash", 
-                                            contents=prompt
-                                        )
+                                        active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash-latest")
+                                        models_hierarchy = ["gemini-1.5-flash-latest", "gemini-1.5-flash"]
+                                        start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
+                                        
+                                        response = None
+                                        last_error = None
+                                        
+                                        for model_name in models_hierarchy[start_idx:]:
+                                            try:
+                                                response = client.models.generate_content(
+                                                    model=model_name, 
+                                                    contents=prompt
+                                                )
+                                                if active_model != model_name:
+                                                    st.session_state["active_ai_model"] = model_name
+                                                    st.toast(f"Engine permanently switched to {model_name}.")
+                                                break
+                                            except Exception as inner_e:
+                                                err_str = str(inner_e)
+                                                last_error = inner_e
+                                                if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                                                    if model_name != models_hierarchy[-1]:
+                                                        time.sleep(1)
+                                                        continue
+                                                raise inner_e
+                                                
+                                        if not response:
+                                            raise last_error
 
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
@@ -827,7 +852,7 @@ Output ONLY the reply text."""
             text = current_item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
             
             try:
-                active_key = MASTER_API_KEY or saved_keys.get("api_key") or st.session_state.get("user_gemini_api_key")
+                active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
                 client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
@@ -867,11 +892,34 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                # Natively using the stable 1.5-flash to completely avoid 20/day limit exhaustion
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash", 
-                    contents=prompt
-                )
+                active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash-latest")
+                models_hierarchy = ["gemini-1.5-flash-latest", "gemini-1.5-flash"]
+                start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
+                
+                response = None
+                last_error = None
+                
+                for model_name in models_hierarchy[start_idx:]:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name, 
+                            contents=prompt
+                        )
+                        if active_model != model_name:
+                            st.session_state["active_ai_model"] = model_name
+                            st.toast(f"Engine permanently switched to {model_name}.")
+                        break
+                    except Exception as inner_e:
+                        err_str = str(inner_e)
+                        last_error = inner_e
+                        if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                            if model_name != models_hierarchy[-1]:
+                                time.sleep(1)
+                                continue
+                        raise inner_e
+                        
+                if not response:
+                    raise last_error
 
                 final_reply = response.text.strip()
                 
@@ -886,7 +934,7 @@ Output ONLY the reply text."""
                 st.session_state["auto_reply_success"] += 1
                 
                 st.session_state["auto_reply_queue"].pop(0)
-                time.sleep(4) # Enforce 4-second pace for 15 RPM
+                time.sleep(4) 
                 st.rerun()
 
             except Exception as e:
@@ -911,8 +959,7 @@ Output ONLY the reply text."""
             
             if time.time() >= next_run:
                 if st.session_state.get("autopilot_force_fetch"):
-                    st.session_state["force_fetch"] = True
-                    st.session_state.pop("channel_comments", None)
+                    st.session_state["autopilot_force_fetch"] = False
                     
                     pending_auto = [c for c in display_comments if c["id"] not in handled_set]
                     if pending_auto:
@@ -931,7 +978,8 @@ Output ONLY the reply text."""
                         st.rerun()
                 else:
                     st.session_state["autopilot_force_fetch"] = True
-                    st.session_state["force_fetch"] = True
+                    st.session_state.pop("master_comments_cache", None)
+                    st.session_state.pop("cached_live_comments", None)
                     st.session_state.pop("channel_comments", None)
                     st.rerun()
             else:
@@ -1012,7 +1060,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-latest", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1117,7 +1165,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-latest", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
@@ -1162,7 +1210,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
