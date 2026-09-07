@@ -118,7 +118,6 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
-    "active_ai_model": "gemini-3.7-flash", 
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -773,34 +772,11 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        active_model = st.session_state.get("active_ai_model", "gemini-3.7-flash")
-                                        models_hierarchy = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
-                                        start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
-                                        
-                                        response = None
-                                        last_error = None
-                                        
-                                        for model_name in models_hierarchy[start_idx:]:
-                                            try:
-                                                response = client.models.generate_content(
-                                                    model=model_name, 
-                                                    contents=prompt
-                                                )
-                                                if active_model != model_name:
-                                                    st.session_state["active_ai_model"] = model_name
-                                                    st.toast(f"Engine permanently switched to {model_name}.")
-                                                break
-                                            except Exception as inner_e:
-                                                err_str = str(inner_e)
-                                                last_error = inner_e
-                                                if "503" in err_str or "429" in err_str:
-                                                    if model_name != "gemini-2.5-flash":
-                                                        time.sleep(2)
-                                                        continue
-                                                raise inner_e
-                                                
-                                        if not response:
-                                            raise last_error
+                                        # Natively using the stable 1.5-flash to completely avoid 20/day limit exhaustion
+                                        response = client.models.generate_content(
+                                            model="gemini-1.5-flash", 
+                                            contents=prompt
+                                        )
 
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
@@ -891,34 +867,11 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                active_model = st.session_state.get("active_ai_model", "gemini-3.7-flash")
-                models_hierarchy = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
-                start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
-                
-                response = None
-                last_error = None
-                
-                for model_name in models_hierarchy[start_idx:]:
-                    try:
-                        response = client.models.generate_content(
-                            model=model_name, 
-                            contents=prompt
-                        )
-                        if active_model != model_name:
-                            st.session_state["active_ai_model"] = model_name
-                            st.toast(f"Engine permanently switched to {model_name}.")
-                        break
-                    except Exception as inner_e:
-                        err_str = str(inner_e)
-                        last_error = inner_e
-                        if "503" in err_str or "429" in err_str:
-                            if model_name != "gemini-2.5-flash":
-                                time.sleep(2)
-                                continue
-                        raise inner_e
-                        
-                if not response:
-                    raise last_error
+                # Natively using the stable 1.5-flash to completely avoid 20/day limit exhaustion
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash", 
+                    contents=prompt
+                )
 
                 final_reply = response.text.strip()
                 
@@ -933,7 +886,7 @@ Output ONLY the reply text."""
                 st.session_state["auto_reply_success"] += 1
                 
                 st.session_state["auto_reply_queue"].pop(0)
-                time.sleep(4)
+                time.sleep(4) # Enforce 4-second pace for 15 RPM
                 st.rerun()
 
             except Exception as e:
@@ -1059,7 +1012,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.7-flash", 
+                                model="gemini-1.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1164,7 +1117,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.7-flash", 
+                                model="gemini-1.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
