@@ -118,7 +118,7 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
-    "active_ai_model": "gemini-3.6-flash", 
+    "active_ai_model": "gemini-3.7-flash", 
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -773,8 +773,8 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
-                                        models_hierarchy = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+                                        active_model = st.session_state.get("active_ai_model", "gemini-3.7-flash")
+                                        models_hierarchy = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
                                         start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                                         
                                         response = None
@@ -794,7 +794,7 @@ Output ONLY the reply text."""
                                                 err_str = str(inner_e)
                                                 last_error = inner_e
                                                 if "503" in err_str or "429" in err_str:
-                                                    if model_name != "gemini-1.5-flash":
+                                                    if model_name != "gemini-2.5-flash":
                                                         time.sleep(2)
                                                         continue
                                                 raise inner_e
@@ -891,8 +891,8 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
-                models_hierarchy = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+                active_model = st.session_state.get("active_ai_model", "gemini-3.7-flash")
+                models_hierarchy = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
                 start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                 
                 response = None
@@ -912,7 +912,7 @@ Output ONLY the reply text."""
                         err_str = str(inner_e)
                         last_error = inner_e
                         if "503" in err_str or "429" in err_str:
-                            if model_name != "gemini-1.5-flash":
+                            if model_name != "gemini-2.5-flash":
                                 time.sleep(2)
                                 continue
                         raise inner_e
@@ -1059,7 +1059,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-3.7-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1164,7 +1164,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-3.7-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
