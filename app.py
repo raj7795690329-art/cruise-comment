@@ -749,7 +749,8 @@ if st.session_state.get("youtube_creds") is not None:
                                             ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
 
                                         length_instruction = "Provide a standard response."
-                                        if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence or emojis."
+                                        if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence (under 10 words) or emojis."
+                                        elif chosen_length == "Medium": length_instruction = "Provide a standard, concise response (1-2 short sentences max)."
                                         elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
 
                                         prompt = f"""You are a professional YouTube creator responding to viewer comments.
@@ -773,23 +774,33 @@ Criteria:
 Output ONLY the reply text."""
                                         
                                         active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
-                                        try:
-                                            response = client.models.generate_content(
-                                                model=active_model, 
-                                                contents=prompt
-                                            )
-                                        except Exception as inner_e:
-                                            err_str = str(inner_e)
-                                            if ("503" in err_str or "429" in err_str) and active_model == "gemini-3.6-flash":
-                                                st.session_state["active_ai_model"] = "gemini-3.5-flash"
-                                                st.toast("Capacity/Quota limit reached. Switching AI engine to 3.5-flash.")
-                                                time.sleep(2)
+                                        models_hierarchy = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+                                        start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
+                                        
+                                        response = None
+                                        last_error = None
+                                        
+                                        for model_name in models_hierarchy[start_idx:]:
+                                            try:
                                                 response = client.models.generate_content(
-                                                    model="gemini-3.5-flash", 
+                                                    model=model_name, 
                                                     contents=prompt
                                                 )
-                                            else:
+                                                if active_model != model_name:
+                                                    st.session_state["active_ai_model"] = model_name
+                                                    st.toast(f"Engine permanently switched to {model_name}.")
+                                                break
+                                            except Exception as inner_e:
+                                                err_str = str(inner_e)
+                                                last_error = inner_e
+                                                if "503" in err_str or "429" in err_str:
+                                                    if model_name != "gemini-1.5-flash":
+                                                        time.sleep(2)
+                                                        continue
                                                 raise inner_e
+                                                
+                                        if not response:
+                                            raise last_error
 
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
@@ -858,7 +869,8 @@ Output ONLY the reply text."""
                     ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
 
                 length_instruction = "Provide a standard response."
-                if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence or emojis."
+                if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence (under 10 words) or emojis."
+                elif chosen_length == "Medium": length_instruction = "Provide a standard, concise response (1-2 short sentences max)."
                 elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
 
                 prompt = f"""You are a professional YouTube creator responding to viewer comments.
@@ -880,23 +892,33 @@ Criteria:
 Output ONLY the reply text."""
 
                 active_model = st.session_state.get("active_ai_model", "gemini-3.6-flash")
-                try:
-                    response = client.models.generate_content(
-                        model=active_model, 
-                        contents=prompt
-                    )
-                except Exception as inner_e:
-                    err_str = str(inner_e)
-                    if ("503" in err_str or "429" in err_str) and active_model == "gemini-3.6-flash":
-                        st.session_state["active_ai_model"] = "gemini-3.5-flash"
-                        st.toast("Capacity/Quota limit reached. Switching AI engine to 3.5-flash.")
-                        time.sleep(2)
+                models_hierarchy = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-1.5-flash"]
+                start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
+                
+                response = None
+                last_error = None
+                
+                for model_name in models_hierarchy[start_idx:]:
+                    try:
                         response = client.models.generate_content(
-                            model="gemini-3.5-flash", 
+                            model=model_name, 
                             contents=prompt
                         )
-                    else:
+                        if active_model != model_name:
+                            st.session_state["active_ai_model"] = model_name
+                            st.toast(f"Engine permanently switched to {model_name}.")
+                        break
+                    except Exception as inner_e:
+                        err_str = str(inner_e)
+                        last_error = inner_e
+                        if "503" in err_str or "429" in err_str:
+                            if model_name != "gemini-1.5-flash":
+                                time.sleep(2)
+                                continue
                         raise inner_e
+                        
+                if not response:
+                    raise last_error
 
                 final_reply = response.text.strip()
                 
