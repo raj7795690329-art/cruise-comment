@@ -118,7 +118,7 @@ defaults = {
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
-    "active_ai_model": "gemini-1.5-flash", 
+    "active_ai_model": "gemini-1.5-flash-002", 
     "video_title_cache": {},
     "video_desc_cache": {},
     "selected_video_filter": "[0] All Videos",
@@ -735,7 +735,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key, http_options={'api_version': 'v1'})
+                                        client = genai.Client(api_key=active_key)
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -774,8 +774,8 @@ Criteria:
 
 Output ONLY the reply text."""
                                         
-                                        active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash")
-                                        models_hierarchy = ["gemini-1.5-flash"]
+                                        active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash-002")
+                                        models_hierarchy = ["gemini-1.5-flash-002", "gemini-1.5-flash-8b", "gemini-1.5-flash", "gemini-1.5-flash-001"]
                                         start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                                         
                                         response = None
@@ -853,7 +853,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key, http_options={'api_version': 'v1'})
+                client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -892,8 +892,8 @@ Criteria:
 
 Output ONLY the reply text."""
 
-                active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash")
-                models_hierarchy = ["gemini-1.5-flash"]
+                active_model = st.session_state.get("active_ai_model", "gemini-1.5-flash-002")
+                models_hierarchy = ["gemini-1.5-flash-002", "gemini-1.5-flash-8b", "gemini-1.5-flash", "gemini-1.5-flash-001"]
                 start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                 
                 response = None
@@ -1058,9 +1058,9 @@ elif st.session_state.get("youtube_creds") is None:
                 else:
                     with st.spinner("Connecting to Gemini..."):
                         try:
-                            client = genai.Client(api_key=user_api_key.strip(), http_options={'api_version': 'v1'})
+                            client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-002", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1163,9 +1163,9 @@ elif st.session_state.get("youtube_creds") is None:
                 if MASTER_API_KEY:
                     with st.spinner("Connecting to Master Engine..."):
                         try:
-                            client = genai.Client(api_key=MASTER_API_KEY, http_options={'api_version': 'v1'})
+                            client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-002", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
