@@ -986,7 +986,13 @@ Output ONLY the reply text."""
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
                     st.session_state["queue_warning"] = f"⏳ 503 Server Busy. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
                     time.sleep(15)
-                    st.rerun() 
+                    st.rerun()
+                elif "400" in err_str or "processingFailure" in err_str:
+                    # NEW: Skip dead/rejected comments without halting the queue
+                    st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
+                    st.session_state["auto_reply_queue"].pop(0)
+                    time.sleep(1) # Brief pause before cruising to the next comment
+                    st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
