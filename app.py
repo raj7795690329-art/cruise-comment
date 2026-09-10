@@ -39,6 +39,10 @@ st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_s
 
 # --- Persistent Context Storage ---
 CONTEXT_FILE = ".cruise_context"
+KEYS_FILE = ".cruise_keys.json"
+TOKENS_FILE = ".youtube_tokens.json"
+VERIFIERS_FILE = ".oauth_verifiers.json"
+
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
@@ -780,7 +784,7 @@ Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
-                                        models_hierarchy = ["gemini-3.5-flash", "gemini-1.5-flash-latest"]
+                                        models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-latest"]
                                         start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                                         
                                         response = None
@@ -923,7 +927,7 @@ Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.4)
 
                 active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
-                models_hierarchy = ["gemini-3.5-flash", "gemini-1.5-flash-latest"]
+                models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-latest"]
                 start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                 
                 response = None
@@ -1247,7 +1251,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
