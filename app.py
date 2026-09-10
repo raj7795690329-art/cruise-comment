@@ -39,10 +39,6 @@ st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_s
 
 # --- Persistent Context Storage ---
 CONTEXT_FILE = ".cruise_context"
-KEYS_FILE = ".cruise_keys.json"
-TOKENS_FILE = ".youtube_tokens.json"
-VERIFIERS_FILE = ".oauth_verifiers.json"
-
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
@@ -125,7 +121,7 @@ defaults = {
     "autopilot_interval": 5,
     "session_visible_handled": set(),
     "queue_warning": None,
-    "active_ai_model": "gemini-1.5-flash-latest"
+    "active_ai_model": "gemini-3.5-flash"
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -457,7 +453,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["autopilot_next_run"] = time.time() 
             else:
                 st.session_state.pop("autopilot_next_run", None)
-                st.session_state.pop("autopilot_force_fetch", None)
+                st.session_state["force_fetch"] = False
             st.rerun()
             
         st.divider()
@@ -783,12 +779,36 @@ Rules:
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
 
-                                        response = client.models.generate_content(
-                                            model="gemini-1.5-flash-latest", 
-                                            contents=prompt,
-                                            config=gen_config
-                                        )
+                                        active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
+                                        models_hierarchy = ["gemini-3.5-flash", "gemini-1.5-flash-latest"]
+                                        start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                                         
+                                        response = None
+                                        last_error = None
+                                        
+                                        for model_name in models_hierarchy[start_idx:]:
+                                            try:
+                                                response = client.models.generate_content(
+                                                    model=model_name, 
+                                                    contents=prompt,
+                                                    config=gen_config
+                                                )
+                                                if active_model != model_name:
+                                                    st.session_state["active_ai_model"] = model_name
+                                                    st.toast(f"Engine permanently switched to {model_name}.")
+                                                break
+                                            except Exception as inner_e:
+                                                err_str = str(inner_e)
+                                                last_error = inner_e
+                                                if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                                                    if model_name != models_hierarchy[-1]:
+                                                        time.sleep(1)
+                                                        continue
+                                                raise inner_e
+                                                
+                                        if not response:
+                                            raise last_error
+
                                         # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
                                         final_reply = response.text.strip().replace("\n", " ")
                                         st.session_state["ai_drafts"][comment_id] = final_reply
@@ -902,11 +922,35 @@ Rules:
 Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.4)
 
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash-latest", 
-                    contents=prompt,
-                    config=gen_config
-                )
+                active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
+                models_hierarchy = ["gemini-3.5-flash", "gemini-1.5-flash-latest"]
+                start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
+                
+                response = None
+                last_error = None
+                
+                for model_name in models_hierarchy[start_idx:]:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name, 
+                            contents=prompt,
+                            config=gen_config
+                        )
+                        if active_model != model_name:
+                            st.session_state["active_ai_model"] = model_name
+                            st.toast(f"Engine permanently switched to {model_name}.")
+                        break
+                    except Exception as inner_e:
+                        err_str = str(inner_e)
+                        last_error = inner_e
+                        if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                            if model_name != models_hierarchy[-1]:
+                                time.sleep(1)
+                                continue
+                        raise inner_e
+                        
+                if not response:
+                    raise last_error
 
                 # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
                 final_reply = response.text.strip().replace("\n", " ")
@@ -1053,7 +1097,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash-latest", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1158,7 +1202,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash-latest", 
+                                model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
