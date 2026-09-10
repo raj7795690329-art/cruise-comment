@@ -5,6 +5,7 @@ import base64
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import time
@@ -406,7 +407,7 @@ if st.session_state.get("youtube_creds") is not None:
             st.subheader("🚀 Cruising Progress")
             
             if st.session_state.get("queue_warning"):
-                st.error(st.session_state["queue_warning"])
+                st.warning(st.session_state["queue_warning"])
 
             total = st.session_state["auto_reply_total"]
             left = len(st.session_state["auto_reply_queue"])
@@ -739,49 +740,71 @@ if st.session_state.get("youtube_creds") is not None:
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
                                         
-                                        single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
-                                        ambient_prompt_section = ""
-                                        ambient_rule = ""
+                                        single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
+                                        
+                                        length_instruction = ""
+                                        if chosen_length == "Small":
+                                            length_instruction = "Keep it to a VERY short, single sentence (e.g., 'Hi!', 'Thank you for watching!') or just emojis."
+                                        elif chosen_length == "Medium":
+                                            length_instruction = "Provide a standard, medium-length response (1-2 sentences)."
+                                        elif chosen_length == "Long":
+                                            length_instruction = "Provide a longer, detailed and thoughtful response."
+
                                         if st.session_state.get("global_ai_mode") == "Deep Context":
+                                            single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
                                             ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
                                             ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments available."
                                             ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
-                                            ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
-
-                                        length_instruction = "Provide a standard response."
-                                        if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence (under 10 words) or emojis."
-                                        elif chosen_length == "Medium": length_instruction = "Provide a standard, concise response (1-2 short sentences max)."
-                                        elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
-
-                                        prompt = f"""You are a professional YouTube creator responding to viewer comments.
+                                            
+                                            prompt = f"""You are a professional YouTube creator responding to viewer comments.
 Your channel's specific niche and style: {active_context}
 
-Context about the video they commented on:
-- Video Title: {vid_title}
-- Video Description: {single_vid_desc}
+Context about the video:
+- Title: {single_vid_title}
+- Description: {single_vid_desc}
 {ambient_prompt_section}
 TARGET COMMENT TO REPLY TO: "{text}"
 
 Criteria:
-1. Tone: MUST be heavily styled in a {chosen_mood.upper()} tone. Genuine and authentic.
+1. Tone: {chosen_mood.upper()}. Authentic.
 2. Length: {length_instruction}
-3. Questions: DO NOT ask questions automatically. ONLY ask a question if the target comment is vague/hard to understand, OR if it is a negative/angry comment (be friendly and try to understand their point). Otherwise, do not ask anything.
-4. Punctuation STRICT RULE: NEVER use the dash/hyphen symbol (-). ONLY use periods, commas, exclamation marks, and question marks.
-5. Negativity: Respond gracefully but firmly. No unnecessary apologies.
-6. Video Context: Analyze the Video Title and Description. If the viewer asks for a link, price, or detail, and it is explicitly in the description, provide it! If not, reply naturally.
-{ambient_rule}
+3. Do not ask questions automatically.
+4. NEVER use the dash/hyphen symbol (-).
+5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
 
 Output ONLY the reply text."""
-                                        
+                                            gen_config = types.GenerateContentConfig(temperature=0.7)
+
+                                        else:
+                                            prompt = f"""You are a YouTube creator replying to a comment.
+Style: {active_context}
+Video Title: {single_vid_title}
+Viewer Comment: "{text}"
+
+Rules:
+1. Tone: {chosen_mood.upper()}
+2. Length: {length_instruction}
+3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
+4. No hyphens (-).
+
+Output ONLY the reply text."""
+                                            gen_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=100)
+
                                         response = client.models.generate_content(
                                             model="gemini-3.5-flash", 
-                                            contents=prompt
+                                            contents=prompt,
+                                            config=gen_config
                                         )
+                                        
                                         st.session_state["ai_drafts"][comment_id] = response.text.strip()
                                         st.rerun()
                                     except Exception as e:
-                                        st.session_state["ai_errors"][comment_id] = str(e)
-                                        st.error(f"Service unavailable: {e}")
+                                        if "503" in str(e):
+                                            st.session_state["ai_errors"][comment_id] = "503 Server Busy. Please click Draft again."
+                                            st.error("Google server is experiencing high demand (503). Please click draft again.")
+                                        else:
+                                            st.session_state["ai_errors"][comment_id] = str(e)
+                                            st.error(f"Service unavailable: {e}")
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
@@ -833,22 +856,19 @@ Output ONLY the reply text."""
                 chosen_length = st.session_state["global_length"]
                 
                 single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
-                single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
-
-                ambient_prompt_section = ""
-                ambient_rule = ""
-                if st.session_state.get("global_ai_mode") == "Deep Context":
-                    ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
-                    ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments."
-                    ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
-                    ambient_rule = "7. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT."
-
+                
                 length_instruction = "Provide a standard response."
                 if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence (under 10 words) or emojis."
                 elif chosen_length == "Medium": length_instruction = "Provide a standard, concise response (1-2 short sentences max)."
                 elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
 
-                prompt = f"""You are a professional YouTube creator responding to viewer comments.
+                if st.session_state.get("global_ai_mode") == "Deep Context":
+                    single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
+                    ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
+                    ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments."
+                    ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
+                    
+                    prompt = f"""You are a professional YouTube creator responding to viewer comments.
 Your channel's specific niche and style: {active_context}
 
 Context about the video:
@@ -862,14 +882,32 @@ Criteria:
 2. Length: {length_instruction}
 3. Do not ask questions automatically.
 4. NEVER use the dash/hyphen symbol (-).
-{ambient_rule}
+5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
 
 Output ONLY the reply text."""
+                    gen_config = types.GenerateContentConfig(temperature=0.7)
+
+                else:
+                    prompt = f"""You are a YouTube creator replying to a comment.
+Style: {active_context}
+Video Title: {single_vid_title}
+Viewer Comment: "{text}"
+
+Rules:
+1. Tone: {chosen_mood.upper()}
+2. Length: {length_instruction}
+3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
+4. No hyphens (-).
+
+Output ONLY the reply text."""
+                    gen_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=100)
 
                 response = client.models.generate_content(
                     model="gemini-3.5-flash", 
-                    contents=prompt
+                    contents=prompt,
+                    config=gen_config
                 )
+
                 final_reply = response.text.strip()
                 
                 youtube.comments().insert(
@@ -890,11 +928,20 @@ Output ONLY the reply text."""
                 err_str = str(e)
                 retry_count = current_item.get("retry_count", 0)
                 
-                if "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
-                    st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                    st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
-                    time.sleep(30)
-                    st.rerun() 
+                # Smart Retry for 503 Server Busy or 429 Speed Limits
+                if ("429" in err_str and "GenerateRequestsPerDay" not in err_str) or "503" in err_str:
+                    if retry_count < 3:
+                        st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
+                        error_type = "503 Server Busy" if "503" in err_str else "API speed limit"
+                        st.session_state["queue_warning"] = f"⏳ {error_type} hit. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
+                        time.sleep(15)
+                        st.rerun() 
+                    else:
+                        error_msg = f"Failed after 3 retries: {err_str}"
+                        st.session_state["ai_errors"][comment_id] = error_msg
+                        st.session_state["auto_reply_paused"] = True
+                        st.session_state["queue_warning"] = f"🛑 Queue halted: {error_msg}"
+                        st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
