@@ -16,91 +16,35 @@ import streamlit.components.v1 as components
 load_dotenv()
 
 def get_secret(key, default=None):
-    val = None
     if key in os.environ and os.environ[key]:
-        val = os.environ[key]
+        return os.environ[key]
     try:
         if key in st.secrets and st.secrets[key]:
-            val = st.secrets[key]
+            return st.secrets[key]
     except Exception:
         pass
-    if val and "your_actual" in str(val).lower():
-        return default
-    return val or default
+    return default
 
-# Master keys are used for the Pro Tier
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
-MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
-MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
+CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
 
-# Hardcoded Live App URL for YouTube OAuth
-APP_URL = "https://cruise-comment-ai.streamlit.app"
+# Dynamic Routing: Uses Cloud URL unless REDIRECT_URI is explicitly set in .env for localhost
+REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app") 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # --- Page Config ---
-st.set_page_config(
-    layout="wide", 
-    page_title="Cruise Comment", 
-    page_icon="🤖",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_state="expanded")
 
-# --- Persistent Local Storage for Keys, Tokens & Context ---
+# --- Persistent Context Storage ---
 CONTEXT_FILE = ".cruise_context"
-KEYS_FILE = ".cruise_keys.json"
-TOKENS_FILE = ".youtube_tokens.json"
-VERIFIERS_FILE = ".oauth_verifiers.json"
-
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
         loaded_context = f.read().strip()
 
-saved_keys = {}
-if os.path.exists(KEYS_FILE):
-    try:
-        with open(KEYS_FILE, "r", encoding="utf-8") as f:
-            saved_keys = json.load(f)
-    except Exception:
-        saved_keys = {}
-
-def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
-    if os.path.exists(KEYS_FILE):
-        try:
-            with open(KEYS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-    else:
-        data = {}
-    if api_key is not None: data["api_key"] = api_key.strip()
-    if client_id is not None: data["client_id"] = client_id.strip()
-    if client_secret is not None: data["client_secret"] = client_secret.strip()
-    with open(KEYS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-
-def save_verifier(state, verifier):
-    data = {}
-    if os.path.exists(VERIFIERS_FILE):
-        try:
-            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except: pass
-    data[state] = verifier
-    with open(VERIFIERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-
-def get_verifier(state):
-    if os.path.exists(VERIFIERS_FILE):
-        try:
-            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get(state)
-        except: pass
-    return None
-
-# --- Initialize Session States ---
+# --- Initialize ALL Session States Safely ---
 defaults = {
     "youtube_creds": None,
     "channel_id": None,           
@@ -110,21 +54,18 @@ defaults = {
     "sent_replies_log": {},
     "processed_history": [], 
     "ai_drafts": {},
-    "ai_errors": {}, 
-    "user_gemini_api_key": saved_keys.get("api_key", ""),
-    "user_client_id": saved_keys.get("client_id", ""),
-    "user_client_secret": saved_keys.get("client_secret", ""),
+    "ai_errors": {},
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
     "global_length": "Medium",
     "global_ai_mode": "Standard", 
-    "active_ai_model": "gemini-3.5-flash", 
     "video_title_cache": {},
     "video_desc_cache": {},
-    "selected_video_filter": "[0] All Videos",
+    "selected_video_filter": "All Videos",
     "video_mapping_cache": {},
     "channel_comments": [],
+    "master_comments_cache": [],
     "auto_reply_queue": [],   
     "auto_reply_total": 0,    
     "auto_reply_success": 0,
@@ -132,21 +73,13 @@ defaults = {
     "last_scrolled_id": None,
     "autopilot_active": False,
     "autopilot_interval": 5,
-    "force_fetch": True,
     "session_visible_handled": set(),
-    "queue_warning": None
+    "queue_warning": None,
+    "active_ai_model": "gemini-1.5-flash-latest"
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
-
-# Load Persisted Session Tokens so Refresh Doesn't Log User Out
-if st.session_state["youtube_creds"] is None and os.path.exists(TOKENS_FILE):
-    try:
-        with open(TOKENS_FILE, "r", encoding="utf-8") as f:
-            st.session_state["youtube_creds"] = json.load(f)
-    except Exception:
-        pass
 
 def get_relative_time(dt):
     now = datetime.now(timezone.utc)
@@ -167,35 +100,133 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Minimal layout styling & Animation Keyframes
+# --- Strict Apple-Inspired Monochromatic Design System ---
 st.markdown("""
     <style>
-        .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        
+        .stApp { 
+            background-color: #FBFBFD !important; 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif !important;
+            color: #111111 !important;
+        }
+
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .stAppViewContainer, .stMain, .stAppViewBlockContainer { overflow: auto !important; }
+        .block-container, [data-testid="stVerticalBlock"] { overflow: visible !important; clip-path: none !important; }
+        
+        [data-testid="block-container"] {
+            animation: fadeSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1040px !important;
+        }
+
         header[data-testid="stHeader"] { display: none; }
         
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        .hero-gallery {
-            display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important;
-            justify-content: center !important; align-items: center !important;
-            margin: 24px auto 48px auto !important; width: 100% !important; min-height: 300px !important;
+        div[data-testid="stVerticalBlock"] > div:has(.sticky-anchor-container) {
+            position: -webkit-sticky !important; position: sticky !important; top: 0px !important; 
+            z-index: 999999 !important; background-color: #FBFBFD !important; 
+            padding: 2.5rem 1rem 1rem 1rem !important; margin: -2.5rem -1rem 1.5rem -1rem !important; 
+            border-bottom: 1px solid #EAEAEA !important; box-shadow: 0 8px 12px -10px rgba(0,0,0,0.05); 
+            width: calc(100% + 4rem) !important;
         }
-        .hero-item {
-            position: relative !important; flex: 0 0 auto !important; border-radius: 18px !important; 
-            overflow: hidden !important; box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
-            margin: 0 -12px !important; 
-        }
-        .hero-item img { display: block !important; object-fit: cover !important; width: 100% !important; height: 100% !important; }
-        .hero-main  { width: 240px !important; height: 280px !important; z-index: 4 !important; }
-        .hero-side  { width: 190px !important; height: 230px !important; z-index: 3 !important; }
-        .hero-far   { width: 140px !important; height: 180px !important; z-index: 2 !important; }
-        .hero-outer { width: 100px !important; height: 130px !important; z-index: 1 !important; }
-        .hero-outer.left { top: 24px !important; } .hero-far.left { top: -16px !important; } .hero-side.left { top: 12px !important; }
-        .hero-main { top: 0px !important; } .hero-side.right { top: -12px !important; } .hero-far.right { top: 16px !important; } .hero-outer.right{ top: -24px !important; }
+
+        .system-header { margin-bottom: 12px; text-align: center; }
+        .main-title { font-size: 36px; font-weight: 600; color: #111111; margin: 0 0 4px 0; letter-spacing: -0.04em; line-height: 1.1; }
+        .sub-title { font-size: 15px; color: #555555; margin: 0; font-weight: 400; letter-spacing: -0.01em; }
+
+        .metrics-banner { background-color: #3A3A3C; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; margin-bottom: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .metric-box { background-color: #FFFFFF; border-radius: 8px; padding: 12px 20px; flex: 1; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .metric-label { font-size: 13px; color: #555555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+        .metric-value { font-size: 20px; font-weight: 600; color: #111111; }
+
+        .hero-gallery { display: flex; justify-content: center; align-items: center; margin: 24px 0 48px 0; }
+        .hero-item { position: relative; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.08); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); background: #FFFFFF; filter: brightness(1.02) contrast(1.02); margin: 0 -12px; border: 3px solid #FBFBFD; }
+        .hero-item:hover { transform: translateY(-8px) scale(1.03) !important; box-shadow: 0 16px 40px rgba(0,0,0,0.15); filter: brightness(1.08) contrast(1.05); z-index: 20 !important; }
+        .hero-item img { display: block; object-fit: cover; width: 100%; height: 100%; }
         
-        .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; height: 38px; line-height: 18px; }
+        .hero-main  { width: 240px; height: 280px; z-index: 4; } .hero-side  { width: 190px; height: 230px; z-index: 3; } .hero-far   { width: 140px; height: 180px; z-index: 2; } .hero-outer { width: 100px; height: 130px; z-index: 1; }
+        .hero-outer.left { top: 24px; } .hero-far.left   { top: -16px; } .hero-side.left  { top: 12px; } .hero-main       { top: 0px; } .hero-side.right { top: -12px; } .hero-far.right  { top: 16px; } .hero-outer.right{ top: -24px; }
+
+        [data-testid="column"]:has(.pricing-card-marker) { display: flex; flex-direction: column; }
+        [data-testid="column"]:has(.pricing-card-marker) > div { flex: 1; display: flex; flex-direction: column; }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) { flex: 1; display: flex; flex-direction: column; padding: 24px !important; background-color: #FFFFFF !important; border-radius: 8px !important; border: 1px solid #E5E5EA !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important; margin-bottom: 0 !important; }
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) > div[data-testid="stVerticalBlock"] { flex: 1; display: flex; flex-direction: column; }
+        div.element-container:has(.pricing-bottom-zone) { margin-top: auto !important; width: 100%; }
+        .bottom-action-group { display: flex; flex-direction: column; gap: 8px; min-height: 90px; justify-content: flex-start; }
+
+        .section-title { font-size: 18px; font-weight: 600; color: #111111; margin-bottom: 16px; letter-spacing: -0.01em; }
+        .tier-feature { font-size: 13px; color: #555555; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; }
+        .tier-feature span { color: #111111; font-weight: 600; }
+        .beta-tag { font-size: 10px; background-color: #E5E5EA; color: #555; padding: 2px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
+
+        details.api-guide { background-color: #F8F8FA; border: 1px solid #E5E5EA; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; }
+        details.api-guide summary { font-weight: 500; color: #333333; cursor: pointer; outline: none; }
+        details.api-guide ol { margin: 8px 0 4px 16px; padding: 0; color: #555555; line-height: 1.4; }
+
+        [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) { background-color: #FFFFFF !important; border-radius: 8px !important; border: 1px solid #E5E5EA !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important; padding: 16px !important; margin-bottom: 12px !important; }
+        [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) [data-testid="stVerticalBlockBorderWrapper"] { padding: 12px !important; background-color: #FBFBFD !important; border: 1px solid #EAEAEA !important; box-shadow: none !important; border-radius: 6px !important; margin-top: 8px !important; margin-bottom: 0 !important; }
+
+        .handled-card { background-color: #F2FDF5 !important; border: 1px solid #34C759 !important; border-radius: 8px !important; padding: 16px !important; margin-bottom: 16px !important; box-shadow: 0 2px 8px rgba(52, 199, 89, 0.08) !important; }
+        .handled-badge { font-size: 12px; font-weight: 600; color: #248A3D; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+
+        [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div { background-color: #FBFBFD !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important; box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; }
+        [data-baseweb="textarea"] > div { height: auto !important; }
+        [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #111111 !important; }
+        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
+        
+        div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
+        div[data-testid="stToggle"] input:checked + div { background-color: #34C759 !important; } 
+
+        .stButton > button, [data-testid="baseButton-primary"] { background-color: #3A3A3C !important; color: #FFFFFF !important; border: 1px solid #3A3A3C !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; padding: 6px 12px !important; transition: all 0.15s ease !important; min-height: 38px !important; filter: grayscale(100%) contrast(1.2); width: 100% !important; }
+        .stButton > button:hover, [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
+        
+        .stop-btn-wrapper .stButton > button { background-color: #FF3B30 !important; border-color: #FF3B30 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
+        .stop-btn-wrapper .stButton > button:hover { background-color: #D70015 !important; border-color: #D70015 !important; }
+        .resume-btn-wrapper .stButton > button { background-color: #34C759 !important; border-color: #34C759 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
+        .resume-btn-wrapper .stButton > button:hover { background-color: #248A3D !important; border-color: #248A3D !important; }
+        .completed-btn-wrapper .stButton > button { background-color: #F0F0F2 !important; border-color: #E5E5EA !important; color: #888888 !important; pointer-events: none; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
+
+        button[title="Filter_Video_Btn"] { background-color: #F0F0F2 !important; color: #555555 !important; border: 1px solid #EAEAEA !important; border-radius: 6px !important; font-size: 11px !important; font-weight: 600 !important; padding: 4px 10px !important; min-height: 26px !important; width: auto !important; display: inline-flex !important; align-items: center; text-transform: uppercase !important; letter-spacing: 0.04em !important; margin-bottom: 6px !important; box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important; transition: all 0.15s ease !important; text-align: left !important; }
+        button[title="Filter_Video_Btn"]:hover { background-color: #E5E5EA !important; color: #111111 !important; border-color: #D1D1D6 !important; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; }
+        button[title="Filter_Video_Btn"] p { font-size: 11px !important; font-weight: 600 !important; color: inherit !important; margin: 0 !important; }
+
+        [data-testid="stSidebar"] .stButton > button { filter: none !important; }
+        [data-testid="stSidebar"] .stButton > button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
+        
+        .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
         .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
+
+        @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
+        .status-dot { height: 6px; width: 6px; background-color: #34C759 !important; border-radius: 50%; display: inline-block; margin-right: 8px; animation: subtlePulse 2.5s infinite ease-in-out; vertical-align: middle; }
+        .status-badge { display: inline-flex; align-items: center; font-size: 13px; color: #111111; background: #F0F0F2; padding: 4px 10px; border-radius: 6px; font-weight: 500; margin-top: 12px; }
+
+        [data-testid="stSidebar"] { background-color: #F5F5F7 !important; border-right: 1px solid #E5E5EA !important; padding-top: 32px; }
+        .sb-section { margin-bottom: 32px; padding: 0 12px; }
+        .sb-header { font-size: 11px; font-weight: 600; color: #888888; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
+        .sb-account-card { background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .sb-account-card img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #E5E5EA; }
+        .sb-account-name { font-size: 13px; font-weight: 600; color: #111111; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sb-account-meta { font-size: 11px; color: #888888; }
+        .sb-item { font-size: 13px; color: #555555; padding: 5px 0; display: flex; justify-content: space-between; align-items: center; }
+        .sb-item-val { font-weight: 500; color: #111111; }
+        .sb-divider { height: 1px; background-color: #E5E5EA; margin: 24px 12px; }
+
+        .comment-header { margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
+        .comment-author { font-size: 14px; font-weight: 600; color: #111111; }
+        .comment-date { font-size: 12px; color: #888888; }
+        .comment-relative { font-size: 12px; color: #888888; font-weight: 400; }
+        .comment-text { font-size: 15px; color: #111111; line-height: 1.5; margin-bottom: 16px; }
+        .video-thumbnail-container { border-radius: 6px; overflow: hidden; border: 1px solid #EAEAEA; margin-bottom: 16px; }
+        .video-thumbnail-container img { width: 100%; display: block; object-fit: cover; }
+        
+        .empty-state { padding: 64px 20px; text-align: center; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 8px; }
+        .empty-title { font-size: 16px; font-weight: 500; color: #111; margin-bottom: 4px; }
+        .empty-sub { font-size: 14px; color: #666; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -407,7 +438,7 @@ if st.session_state.get("youtube_creds") is not None:
             st.subheader("🚀 Cruising Progress")
             
             if st.session_state.get("queue_warning"):
-                st.warning(st.session_state["queue_warning"])
+                st.error(st.session_state["queue_warning"])
 
             total = st.session_state["auto_reply_total"]
             left = len(st.session_state["auto_reply_queue"])
@@ -744,11 +775,11 @@ if st.session_state.get("youtube_creds") is not None:
                                         
                                         length_instruction = ""
                                         if chosen_length == "Small":
-                                            length_instruction = "Keep it to a VERY short, single sentence (e.g., 'Hi!', 'Thank you for watching!') or just emojis."
+                                            length_instruction = "Write exactly ONE short, complete sentence (under 12 words) or just use emojis. Ensure the thought is finished."
                                         elif chosen_length == "Medium":
-                                            length_instruction = "Provide a standard, medium-length response (1-2 sentences)."
+                                            length_instruction = "Write exactly ONE or TWO complete sentences. You must naturally finish your sentences with punctuation."
                                         elif chosen_length == "Long":
-                                            length_instruction = "Provide a longer, detailed and thoughtful response."
+                                            length_instruction = "Write a detailed, thoughtful response consisting of 3 to 4 complete sentences."
 
                                         if st.session_state.get("global_ai_mode") == "Deep Context":
                                             single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
@@ -771,6 +802,7 @@ Criteria:
 3. Do not ask questions automatically.
 4. NEVER use the dash/hyphen symbol (-).
 5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.7)
@@ -786,9 +818,10 @@ Rules:
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
 4. No hyphens (-).
+5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                                            gen_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=100)
+                                            gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         response = client.models.generate_content(
                                             model="gemini-3.5-flash", 
@@ -796,7 +829,9 @@ Output ONLY the reply text."""
                                             config=gen_config
                                         )
                                         
-                                        st.session_state["ai_drafts"][comment_id] = response.text.strip()
+                                        # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
+                                        final_reply = response.text.strip().replace("\n", " ")
+                                        st.session_state["ai_drafts"][comment_id] = final_reply
                                         st.rerun()
                                     except Exception as e:
                                         if "503" in str(e):
@@ -857,10 +892,13 @@ Output ONLY the reply text."""
                 
                 single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
                 
-                length_instruction = "Provide a standard response."
-                if chosen_length == "Small": length_instruction = "Keep it to a VERY short, single sentence (under 10 words) or emojis."
-                elif chosen_length == "Medium": length_instruction = "Provide a standard, concise response (1-2 short sentences max)."
-                elif chosen_length == "Long": length_instruction = "Provide a longer, detailed response."
+                length_instruction = ""
+                if chosen_length == "Small":
+                    length_instruction = "Write exactly ONE short, complete sentence (under 12 words) or just use emojis. Ensure the thought is finished."
+                elif chosen_length == "Medium":
+                    length_instruction = "Write exactly ONE or TWO complete sentences. You must naturally finish your sentences with punctuation."
+                elif chosen_length == "Long":
+                    length_instruction = "Write a detailed, thoughtful response consisting of 3 to 4 complete sentences."
 
                 if st.session_state.get("global_ai_mode") == "Deep Context":
                     single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
@@ -883,6 +921,7 @@ Criteria:
 3. Do not ask questions automatically.
 4. NEVER use the dash/hyphen symbol (-).
 5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.7)
@@ -898,9 +937,10 @@ Rules:
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
 4. No hyphens (-).
+5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                    gen_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=100)
+                    gen_config = types.GenerateContentConfig(temperature=0.4)
 
                 response = client.models.generate_content(
                     model="gemini-3.5-flash", 
@@ -908,7 +948,8 @@ Output ONLY the reply text."""
                     config=gen_config
                 )
 
-                final_reply = response.text.strip()
+                # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
+                final_reply = response.text.strip().replace("\n", " ")
                 
                 youtube.comments().insert(
                     part="snippet",
@@ -928,20 +969,16 @@ Output ONLY the reply text."""
                 err_str = str(e)
                 retry_count = current_item.get("retry_count", 0)
                 
-                # Smart Retry for 503 Server Busy or 429 Speed Limits
-                if ("429" in err_str and "GenerateRequestsPerDay" not in err_str) or "503" in err_str:
-                    if retry_count < 3:
-                        st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                        error_type = "503 Server Busy" if "503" in err_str else "API speed limit"
-                        st.session_state["queue_warning"] = f"⏳ {error_type} hit. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
-                        time.sleep(15)
-                        st.rerun() 
-                    else:
-                        error_msg = f"Failed after 3 retries: {err_str}"
-                        st.session_state["ai_errors"][comment_id] = error_msg
-                        st.session_state["auto_reply_paused"] = True
-                        st.session_state["queue_warning"] = f"🛑 Queue halted: {error_msg}"
-                        st.rerun()
+                if "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
+                    st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
+                    st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
+                    time.sleep(30)
+                    st.rerun() 
+                elif "503" in err_str and retry_count < 2:
+                    st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
+                    st.session_state["queue_warning"] = f"⏳ 503 Server Busy. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
+                    time.sleep(15)
+                    st.rerun() 
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
