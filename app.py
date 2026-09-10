@@ -39,6 +39,10 @@ st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_s
 
 # --- Persistent Context Storage ---
 CONTEXT_FILE = ".cruise_context"
+KEYS_FILE = ".cruise_keys.json"
+TOKENS_FILE = ".youtube_tokens.json"
+VERIFIERS_FILE = ".oauth_verifiers.json"
+
 loaded_context = ""
 if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
@@ -120,7 +124,8 @@ defaults = {
     "autopilot_active": False,
     "autopilot_interval": 5,
     "session_visible_handled": set(),
-    "queue_warning": None
+    "queue_warning": None,
+    "active_ai_model": "gemini-1.5-flash-latest"
 }
 for key, val in defaults.items():
     if key not in st.session_state:
@@ -271,67 +276,51 @@ if st.session_state.get("youtube_creds") is not None:
         channel_logo = st.session_state["channel_logo"]
         
         if channel_id:
-            is_replying = bool(st.session_state.get("auto_reply_queue"))
-            
-            if is_replying and "cached_live_comments" in st.session_state:
-                live_comments = st.session_state["cached_live_comments"]
-            else:
-                channel_req = youtube.commentThreads().list(
-                    part="snippet,replies",
-                    allThreadsRelatedToChannelId=channel_id,
-                    maxResults=100, 
-                    order="time",
-                    textFormat="plainText"
-                ).execute()
-                st.session_state["channel_comments"] = channel_req.get("items", [])
-                
-                target_vid = None
-                selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
-                
-                if " [" in selected_filter_title:
-                    clean_filter_title = selected_filter_title.split(" [")[0].strip()
-                else:
-                    clean_filter_title = selected_filter_title
-
-                if clean_filter_title != "All Videos":
-                    for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
-                        if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
-                            target_vid = vid_id
-                            break
+            if not st.session_state.get("channel_comments") or st.session_state.get("force_fetch"):
+                with st.spinner("Fetching latest channel activity..."):
+                    fetched_comments = []
+                    next_token = None
                     
-                if target_vid:
-                    vid_req = youtube.commentThreads().list(
-                        part="snippet,replies",
-                        videoId=target_vid,
-                        maxResults=100, 
-                        order="time",
-                        textFormat="plainText"
-                    ).execute()
-                    live_comments = vid_req.get("items", [])
-                else:
-                    live_comments = st.session_state["channel_comments"]
-                
-                missing_vids = []
-                for item in st.session_state["channel_comments"] + live_comments:
-                    vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
-                    if vid and vid not in st.session_state["video_title_cache"]:
-                        missing_vids.append(vid)
-                
-                if missing_vids:
-                    unique_vids = list(set(missing_vids))[:50]
-                    try:
-                        vid_response = youtube.videos().list(
-                            part="snippet",
-                            id=",".join(unique_vids)
-                        ).execute()
-                        for v_item in vid_response.get("items", []):
-                            st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
-                            st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
-                    except Exception:
-                        pass
-                
-                st.session_state["cached_live_comments"] = live_comments
-                st.session_state["master_comments_cache"] = live_comments
+                    for _ in range(5):
+                        try:
+                            req = youtube.commentThreads().list(
+                                part="snippet,replies",
+                                allThreadsRelatedToChannelId=channel_id,
+                                maxResults=100,
+                                order="time",
+                                textFormat="plainText",
+                                pageToken=next_token
+                            ).execute()
+                            fetched_comments.extend(req.get("items", []))
+                            next_token = req.get("nextPageToken")
+                            if not next_token:
+                                break
+                        except Exception:
+                            break
+                            
+                    st.session_state["channel_comments"] = fetched_comments
+                    st.session_state["force_fetch"] = False
+                    
+                    missing_vids = []
+                    for item in fetched_comments:
+                        vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
+                        if vid and vid not in st.session_state["video_title_cache"]:
+                            missing_vids.append(vid)
+                    
+                    if missing_vids:
+                        unique_vids = list(set(missing_vids))[:50]
+                        try:
+                            vid_response = youtube.videos().list(
+                                part="snippet",
+                                id=",".join(unique_vids)
+                            ).execute()
+                            for v_item in vid_response.get("items", []):
+                                st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
+                                st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
+                        except Exception:
+                            pass
+            
+            live_comments = st.session_state["channel_comments"]
             
             for item in live_comments:
                 cid = item["id"]
@@ -361,30 +350,7 @@ if st.session_state.get("youtube_creds") is not None:
         channel_id = st.session_state.get("channel_id")
         channel_name = st.session_state.get("channel_name", "YouTube Account")
         channel_logo = st.session_state.get("channel_logo", "")
-        
-        if st.session_state.get("master_comments_cache"):
-            live_comments = st.session_state["master_comments_cache"]
-        elif st.session_state.get("channel_comments"):
-            target_vid = None
-            selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
-            
-            if " [" in selected_filter_title:
-                clean_filter_title = selected_filter_title.split(" [")[0].strip()
-            else:
-                clean_filter_title = selected_filter_title
-
-            if clean_filter_title != "All Videos":
-                for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
-                    if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
-                        target_vid = vid_id
-                        break
-                
-            if target_vid:
-                live_comments = [c for c in st.session_state["channel_comments"] if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == target_vid]
-            else:
-                live_comments = st.session_state["channel_comments"]
-        else:
-            live_comments = []
+        live_comments = st.session_state.get("channel_comments", [])
 
     total_fetched = len(live_comments)
     handled_set = st.session_state.get("replied_comments", set())
@@ -799,6 +765,7 @@ Criteria:
 6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
+                                            gen_config = types.GenerateContentConfig(temperature=0.7)
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
@@ -814,10 +781,12 @@ Rules:
 5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
+                                            gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         response = client.models.generate_content(
-                                            model="gemini-1.5-flash", 
-                                            contents=prompt
+                                            model="gemini-1.5-flash-latest", 
+                                            contents=prompt,
+                                            config=gen_config
                                         )
                                         
                                         # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
@@ -915,6 +884,7 @@ Criteria:
 6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
+                    gen_config = types.GenerateContentConfig(temperature=0.7)
 
                 else:
                     prompt = f"""You are a YouTube creator replying to a comment.
@@ -930,10 +900,12 @@ Rules:
 5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
+                    gen_config = types.GenerateContentConfig(temperature=0.4)
 
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash", 
-                    contents=prompt
+                    model="gemini-1.5-flash-latest", 
+                    contents=prompt,
+                    config=gen_config
                 )
 
                 # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
@@ -1081,7 +1053,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-latest", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1186,7 +1158,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-1.5-flash", 
+                                model="gemini-1.5-flash-latest", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
