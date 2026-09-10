@@ -784,7 +784,7 @@ Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
-                                        models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-latest"]
+                                        models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
                                         start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                                         
                                         response = None
@@ -876,7 +876,7 @@ Output ONLY the reply text."""
                 
                 single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
                 
-                length_instruction = ""
+                length_instruction = "Provide a standard response."
                 if chosen_length == "Small":
                     length_instruction = "Write exactly ONE short, complete sentence (under 12 words) or just use emojis. Ensure the thought is finished."
                 elif chosen_length == "Medium":
@@ -927,7 +927,7 @@ Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.4)
 
                 active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
-                models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-latest"]
+                models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
                 start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
                 
                 response = None
@@ -1251,7 +1251,7 @@ elif st.session_state.get("youtube_creds") is None:
             st.markdown(f'''
             <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                 {pro_auth_link}
-                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect YouTube <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
+                <a href="#" target="_blank" class="auth-btn disabled-btn"><span style="color: #888888; margin-right: 6px; font-size: 16px;">●</span>Connect Instagram <span style="font-size: 10px; background: #E5E5EA; padding: 2px 4px; border-radius: 4px;">BETA</span></a>
             </div>
             ''', unsafe_allow_html=True)
                     
