@@ -44,6 +44,49 @@ if os.path.exists(CONTEXT_FILE):
     with open(CONTEXT_FILE, "r", encoding="utf-8") as f:
         loaded_context = f.read().strip()
 
+saved_keys = {}
+if os.path.exists(KEYS_FILE):
+    try:
+        with open(KEYS_FILE, "r", encoding="utf-8") as f:
+            saved_keys = json.load(f)
+    except Exception:
+        saved_keys = {}
+
+def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
+    if os.path.exists(KEYS_FILE):
+        try:
+            with open(KEYS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    if api_key is not None: data["api_key"] = api_key.strip()
+    if client_id is not None: data["client_id"] = client_id.strip()
+    if client_secret is not None: data["client_secret"] = client_secret.strip()
+    with open(KEYS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def save_verifier(state, verifier):
+    data = {}
+    if os.path.exists(VERIFIERS_FILE):
+        try:
+            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except: pass
+    data[state] = verifier
+    with open(VERIFIERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def get_verifier(state):
+    if os.path.exists(VERIFIERS_FILE):
+        try:
+            with open(VERIFIERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get(state)
+        except: pass
+    return None
+
 # --- Initialize ALL Session States Safely ---
 defaults = {
     "youtube_creds": None,
@@ -55,6 +98,9 @@ defaults = {
     "processed_history": [], 
     "ai_drafts": {},
     "ai_errors": {},
+    "user_gemini_api_key": saved_keys.get("api_key", ""),
+    "user_client_id": saved_keys.get("client_id", ""),
+    "user_client_secret": saved_keys.get("client_secret", ""),
     "saved_channel_context": loaded_context, 
     "context_locked": bool(loaded_context),  
     "global_mood": "Friendly",
@@ -74,12 +120,19 @@ defaults = {
     "autopilot_active": False,
     "autopilot_interval": 5,
     "session_visible_handled": set(),
-    "queue_warning": None,
-    "active_ai_model": "gemini-1.5-flash-latest"
+    "queue_warning": None
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# Load Persisted Session Tokens so Refresh Doesn't Log User Out
+if st.session_state["youtube_creds"] is None and os.path.exists(TOKENS_FILE):
+    try:
+        with open(TOKENS_FILE, "r", encoding="utf-8") as f:
+            st.session_state["youtube_creds"] = json.load(f)
+    except Exception:
+        pass
 
 def get_relative_time(dt):
     now = datetime.now(timezone.utc)
@@ -100,133 +153,35 @@ def get_relative_time(dt):
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# --- Strict Apple-Inspired Monochromatic Design System ---
+# Original Minimal layout styling
 st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-        
-        .stApp { 
-            background-color: #FBFBFD !important; 
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif !important;
-            color: #111111 !important;
-        }
-
-        @keyframes fadeSlideUp {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .stAppViewContainer, .stMain, .stAppViewBlockContainer { overflow: auto !important; }
-        .block-container, [data-testid="stVerticalBlock"] { overflow: visible !important; clip-path: none !important; }
-        
-        [data-testid="block-container"] {
-            animation: fadeSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1040px !important;
-        }
-
+        .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 1100px !important; }
         header[data-testid="stHeader"] { display: none; }
         
-        div[data-testid="stVerticalBlock"] > div:has(.sticky-anchor-container) {
-            position: -webkit-sticky !important; position: sticky !important; top: 0px !important; 
-            z-index: 999999 !important; background-color: #FBFBFD !important; 
-            padding: 2.5rem 1rem 1rem 1rem !important; margin: -2.5rem -1rem 1.5rem -1rem !important; 
-            border-bottom: 1px solid #EAEAEA !important; box-shadow: 0 8px 12px -10px rgba(0,0,0,0.05); 
-            width: calc(100% + 4rem) !important;
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .hero-gallery {
+            display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important;
+            justify-content: center !important; align-items: center !important;
+            margin: 24px auto 48px auto !important; width: 100% !important; min-height: 300px !important;
         }
-
-        .system-header { margin-bottom: 12px; text-align: center; }
-        .main-title { font-size: 36px; font-weight: 600; color: #111111; margin: 0 0 4px 0; letter-spacing: -0.04em; line-height: 1.1; }
-        .sub-title { font-size: 15px; color: #555555; margin: 0; font-weight: 400; letter-spacing: -0.01em; }
-
-        .metrics-banner { background-color: #3A3A3C; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; margin-bottom: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .metric-box { background-color: #FFFFFF; border-radius: 8px; padding: 12px 20px; flex: 1; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .metric-label { font-size: 13px; color: #555555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-        .metric-value { font-size: 20px; font-weight: 600; color: #111111; }
-
-        .hero-gallery { display: flex; justify-content: center; align-items: center; margin: 24px 0 48px 0; }
-        .hero-item { position: relative; border-radius: 18px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.08); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); background: #FFFFFF; filter: brightness(1.02) contrast(1.02); margin: 0 -12px; border: 3px solid #FBFBFD; }
-        .hero-item:hover { transform: translateY(-8px) scale(1.03) !important; box-shadow: 0 16px 40px rgba(0,0,0,0.15); filter: brightness(1.08) contrast(1.05); z-index: 20 !important; }
-        .hero-item img { display: block; object-fit: cover; width: 100%; height: 100%; }
+        .hero-item {
+            position: relative !important; flex: 0 0 auto !important; border-radius: 18px !important; 
+            overflow: hidden !important; box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+            margin: 0 -12px !important; 
+        }
+        .hero-item img { display: block !important; object-fit: cover !important; width: 100% !important; height: 100% !important; }
+        .hero-main  { width: 240px !important; height: 280px !important; z-index: 4 !important; }
+        .hero-side  { width: 190px !important; height: 230px !important; z-index: 3 !important; }
+        .hero-far   { width: 140px !important; height: 180px !important; z-index: 2 !important; }
+        .hero-outer { width: 100px !important; height: 130px !important; z-index: 1 !important; }
+        .hero-outer.left { top: 24px !important; } .hero-far.left { top: -16px !important; } .hero-side.left { top: 12px !important; }
+        .hero-main { top: 0px !important; } .hero-side.right { top: -12px !important; } .hero-far.right { top: 16px !important; } .hero-outer.right{ top: -24px !important; }
         
-        .hero-main  { width: 240px; height: 280px; z-index: 4; } .hero-side  { width: 190px; height: 230px; z-index: 3; } .hero-far   { width: 140px; height: 180px; z-index: 2; } .hero-outer { width: 100px; height: 130px; z-index: 1; }
-        .hero-outer.left { top: 24px; } .hero-far.left   { top: -16px; } .hero-side.left  { top: 12px; } .hero-main       { top: 0px; } .hero-side.right { top: -12px; } .hero-far.right  { top: 16px; } .hero-outer.right{ top: -24px; }
-
-        [data-testid="column"]:has(.pricing-card-marker) { display: flex; flex-direction: column; }
-        [data-testid="column"]:has(.pricing-card-marker) > div { flex: 1; display: flex; flex-direction: column; }
-        [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) { flex: 1; display: flex; flex-direction: column; padding: 24px !important; background-color: #FFFFFF !important; border-radius: 8px !important; border: 1px solid #E5E5EA !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important; margin-bottom: 0 !important; }
-        [data-testid="stVerticalBlockBorderWrapper"]:has(.pricing-card-marker) > div[data-testid="stVerticalBlock"] { flex: 1; display: flex; flex-direction: column; }
-        div.element-container:has(.pricing-bottom-zone) { margin-top: auto !important; width: 100%; }
-        .bottom-action-group { display: flex; flex-direction: column; gap: 8px; min-height: 90px; justify-content: flex-start; }
-
-        .section-title { font-size: 18px; font-weight: 600; color: #111111; margin-bottom: 16px; letter-spacing: -0.01em; }
-        .tier-feature { font-size: 13px; color: #555555; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; }
-        .tier-feature span { color: #111111; font-weight: 600; }
-        .beta-tag { font-size: 10px; background-color: #E5E5EA; color: #555; padding: 2px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
-
-        details.api-guide { background-color: #F8F8FA; border: 1px solid #E5E5EA; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; }
-        details.api-guide summary { font-weight: 500; color: #333333; cursor: pointer; outline: none; }
-        details.api-guide ol { margin: 8px 0 4px 16px; padding: 0; color: #555555; line-height: 1.4; }
-
-        [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) { background-color: #FFFFFF !important; border-radius: 8px !important; border: 1px solid #E5E5EA !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important; padding: 16px !important; margin-bottom: 12px !important; }
-        [data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pricing-card-marker)) [data-testid="stVerticalBlockBorderWrapper"] { padding: 12px !important; background-color: #FBFBFD !important; border: 1px solid #EAEAEA !important; box-shadow: none !important; border-radius: 6px !important; margin-top: 8px !important; margin-bottom: 0 !important; }
-
-        .handled-card { background-color: #F2FDF5 !important; border: 1px solid #34C759 !important; border-radius: 8px !important; padding: 16px !important; margin-bottom: 16px !important; box-shadow: 0 2px 8px rgba(52, 199, 89, 0.08) !important; }
-        .handled-badge { font-size: 12px; font-weight: 600; color: #248A3D; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-
-        [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div { background-color: #FBFBFD !important; border: 1px solid #D1D1D6 !important; border-radius: 6px !important; box-shadow: none !important; transition: border-color 0.15s ease; height: 38px !important; }
-        [data-baseweb="textarea"] > div { height: auto !important; }
-        [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within { border-color: #111111 !important; }
-        [data-baseweb="input"] input, [data-baseweb="textarea"] textarea { background-color: transparent !important; color: #111111 !important; font-size: 13px !important; padding: 8px 12px !important; line-height: 1.4 !important; }
-        
-        div[data-testid="stToggle"] input + div { background-color: #FF3B30 !important; } 
-        div[data-testid="stToggle"] input:checked + div { background-color: #34C759 !important; } 
-
-        .stButton > button, [data-testid="baseButton-primary"] { background-color: #3A3A3C !important; color: #FFFFFF !important; border: 1px solid #3A3A3C !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; padding: 6px 12px !important; transition: all 0.15s ease !important; min-height: 38px !important; filter: grayscale(100%) contrast(1.2); width: 100% !important; }
-        .stButton > button:hover, [data-testid="baseButton-primary"]:hover { background-color: #2C2C2E !important; border-color: #2C2C2E !important; }
-        
-        .stop-btn-wrapper .stButton > button { background-color: #FF3B30 !important; border-color: #FF3B30 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-        .stop-btn-wrapper .stButton > button:hover { background-color: #D70015 !important; border-color: #D70015 !important; }
-        .resume-btn-wrapper .stButton > button { background-color: #34C759 !important; border-color: #34C759 !important; color: #FFFFFF !important; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-        .resume-btn-wrapper .stButton > button:hover { background-color: #248A3D !important; border-color: #248A3D !important; }
-        .completed-btn-wrapper .stButton > button { background-color: #F0F0F2 !important; border-color: #E5E5EA !important; color: #888888 !important; pointer-events: none; filter: none !important; font-size: 14px !important; font-weight: 600 !important; }
-
-        button[title="Filter_Video_Btn"] { background-color: #F0F0F2 !important; color: #555555 !important; border: 1px solid #EAEAEA !important; border-radius: 6px !important; font-size: 11px !important; font-weight: 600 !important; padding: 4px 10px !important; min-height: 26px !important; width: auto !important; display: inline-flex !important; align-items: center; text-transform: uppercase !important; letter-spacing: 0.04em !important; margin-bottom: 6px !important; box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important; transition: all 0.15s ease !important; text-align: left !important; }
-        button[title="Filter_Video_Btn"]:hover { background-color: #E5E5EA !important; color: #111111 !important; border-color: #D1D1D6 !important; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; }
-        button[title="Filter_Video_Btn"] p { font-size: 11px !important; font-weight: 600 !important; color: inherit !important; margin: 0 !important; }
-
-        [data-testid="stSidebar"] .stButton > button { filter: none !important; }
-        [data-testid="stSidebar"] .stButton > button p::before { content: "● "; color: #FF3B30; font-size: 14px; }
-        
-        .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; filter: none !important; height: 38px; line-height: 18px; }
+        .auth-btn { display: inline-block; background-color: #3A3A3C !important; color: #FFFFFF !important; border-radius: 6px !important; font-weight: 500 !important; font-size: 13px !important; text-align: center !important; width: 100% !important; padding: 10px 12px !important; text-decoration: none !important; box-sizing: border-box; height: 38px; line-height: 18px; }
         .auth-btn:hover { background-color: #2C2C2E !important; color: #FFFFFF !important; }
         .disabled-btn { background-color: #F0F0F2 !important; color: #888888 !important; border: 1px solid #E5E5EA !important; pointer-events: none !important; }
-
-        @keyframes subtlePulse { 0% { opacity: 0.3; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.3; transform: scale(0.95); } }
-        .status-dot { height: 6px; width: 6px; background-color: #34C759 !important; border-radius: 50%; display: inline-block; margin-right: 8px; animation: subtlePulse 2.5s infinite ease-in-out; vertical-align: middle; }
-        .status-badge { display: inline-flex; align-items: center; font-size: 13px; color: #111111; background: #F0F0F2; padding: 4px 10px; border-radius: 6px; font-weight: 500; margin-top: 12px; }
-
-        [data-testid="stSidebar"] { background-color: #F5F5F7 !important; border-right: 1px solid #E5E5EA !important; padding-top: 32px; }
-        .sb-section { margin-bottom: 32px; padding: 0 12px; }
-        .sb-header { font-size: 11px; font-weight: 600; color: #888888; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
-        .sb-account-card { background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-        .sb-account-card img { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #E5E5EA; }
-        .sb-account-name { font-size: 13px; font-weight: 600; color: #111111; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sb-account-meta { font-size: 11px; color: #888888; }
-        .sb-item { font-size: 13px; color: #555555; padding: 5px 0; display: flex; justify-content: space-between; align-items: center; }
-        .sb-item-val { font-weight: 500; color: #111111; }
-        .sb-divider { height: 1px; background-color: #E5E5EA; margin: 24px 12px; }
-
-        .comment-header { margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
-        .comment-author { font-size: 14px; font-weight: 600; color: #111111; }
-        .comment-date { font-size: 12px; color: #888888; }
-        .comment-relative { font-size: 12px; color: #888888; font-weight: 400; }
-        .comment-text { font-size: 15px; color: #111111; line-height: 1.5; margin-bottom: 16px; }
-        .video-thumbnail-container { border-radius: 6px; overflow: hidden; border: 1px solid #EAEAEA; margin-bottom: 16px; }
-        .video-thumbnail-container img { width: 100%; display: block; object-fit: cover; }
-        
-        .empty-state { padding: 64px 20px; text-align: center; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 8px; }
-        .empty-title { font-size: 16px; font-weight: 500; color: #111; margin-bottom: 4px; }
-        .empty-sub { font-size: 14px; color: #666; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -316,51 +271,67 @@ if st.session_state.get("youtube_creds") is not None:
         channel_logo = st.session_state["channel_logo"]
         
         if channel_id:
-            if not st.session_state.get("channel_comments") or st.session_state.get("force_fetch"):
-                with st.spinner("Fetching latest channel activity..."):
-                    fetched_comments = []
-                    next_token = None
-                    
-                    for _ in range(5):
-                        try:
-                            req = youtube.commentThreads().list(
-                                part="snippet,replies",
-                                allThreadsRelatedToChannelId=channel_id,
-                                maxResults=100,
-                                order="time",
-                                textFormat="plainText",
-                                pageToken=next_token
-                            ).execute()
-                            fetched_comments.extend(req.get("items", []))
-                            next_token = req.get("nextPageToken")
-                            if not next_token:
-                                break
-                        except Exception:
-                            break
-                            
-                    st.session_state["channel_comments"] = fetched_comments
-                    st.session_state["force_fetch"] = False
-                    
-                    missing_vids = []
-                    for item in fetched_comments:
-                        vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
-                        if vid and vid not in st.session_state["video_title_cache"]:
-                            missing_vids.append(vid)
-                    
-                    if missing_vids:
-                        unique_vids = list(set(missing_vids))[:50]
-                        try:
-                            vid_response = youtube.videos().list(
-                                part="snippet",
-                                id=",".join(unique_vids)
-                            ).execute()
-                            for v_item in vid_response.get("items", []):
-                                st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
-                                st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
-                        except Exception:
-                            pass
+            is_replying = bool(st.session_state.get("auto_reply_queue"))
             
-            live_comments = st.session_state["channel_comments"]
+            if is_replying and "cached_live_comments" in st.session_state:
+                live_comments = st.session_state["cached_live_comments"]
+            else:
+                channel_req = youtube.commentThreads().list(
+                    part="snippet,replies",
+                    allThreadsRelatedToChannelId=channel_id,
+                    maxResults=100, 
+                    order="time",
+                    textFormat="plainText"
+                ).execute()
+                st.session_state["channel_comments"] = channel_req.get("items", [])
+                
+                target_vid = None
+                selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
+                
+                if " [" in selected_filter_title:
+                    clean_filter_title = selected_filter_title.split(" [")[0].strip()
+                else:
+                    clean_filter_title = selected_filter_title
+
+                if clean_filter_title != "All Videos":
+                    for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
+                        if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
+                            target_vid = vid_id
+                            break
+                    
+                if target_vid:
+                    vid_req = youtube.commentThreads().list(
+                        part="snippet,replies",
+                        videoId=target_vid,
+                        maxResults=100, 
+                        order="time",
+                        textFormat="plainText"
+                    ).execute()
+                    live_comments = vid_req.get("items", [])
+                else:
+                    live_comments = st.session_state["channel_comments"]
+                
+                missing_vids = []
+                for item in st.session_state["channel_comments"] + live_comments:
+                    vid = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
+                    if vid and vid not in st.session_state["video_title_cache"]:
+                        missing_vids.append(vid)
+                
+                if missing_vids:
+                    unique_vids = list(set(missing_vids))[:50]
+                    try:
+                        vid_response = youtube.videos().list(
+                            part="snippet",
+                            id=",".join(unique_vids)
+                        ).execute()
+                        for v_item in vid_response.get("items", []):
+                            st.session_state["video_title_cache"][v_item["id"]] = v_item["snippet"]["title"]
+                            st.session_state["video_desc_cache"][v_item["id"]] = v_item["snippet"].get("description", "")
+                    except Exception:
+                        pass
+                
+                st.session_state["cached_live_comments"] = live_comments
+                st.session_state["master_comments_cache"] = live_comments
             
             for item in live_comments:
                 cid = item["id"]
@@ -390,7 +361,30 @@ if st.session_state.get("youtube_creds") is not None:
         channel_id = st.session_state.get("channel_id")
         channel_name = st.session_state.get("channel_name", "YouTube Account")
         channel_logo = st.session_state.get("channel_logo", "")
-        live_comments = st.session_state.get("channel_comments", [])
+        
+        if st.session_state.get("master_comments_cache"):
+            live_comments = st.session_state["master_comments_cache"]
+        elif st.session_state.get("channel_comments"):
+            target_vid = None
+            selected_filter_title = st.session_state.get("selected_video_filter", "All Videos")
+            
+            if " [" in selected_filter_title:
+                clean_filter_title = selected_filter_title.split(" [")[0].strip()
+            else:
+                clean_filter_title = selected_filter_title
+
+            if clean_filter_title != "All Videos":
+                for full_title, vid_id in st.session_state.get("video_mapping_cache", {}).items():
+                    if clean_filter_title in full_title or full_title.startswith(clean_filter_title):
+                        target_vid = vid_id
+                        break
+                
+            if target_vid:
+                live_comments = [c for c in st.session_state["channel_comments"] if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == target_vid]
+            else:
+                live_comments = st.session_state["channel_comments"]
+        else:
+            live_comments = []
 
     total_fetched = len(live_comments)
     handled_set = st.session_state.get("replied_comments", set())
@@ -497,7 +491,7 @@ if st.session_state.get("youtube_creds") is not None:
                 st.session_state["autopilot_next_run"] = time.time() 
             else:
                 st.session_state.pop("autopilot_next_run", None)
-                st.session_state["force_fetch"] = False
+                st.session_state.pop("autopilot_force_fetch", None)
             st.rerun()
             
         st.divider()
@@ -805,7 +799,6 @@ Criteria:
 6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
-                                            gen_config = types.GenerateContentConfig(temperature=0.7)
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
@@ -821,12 +814,10 @@ Rules:
 5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                                            gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         response = client.models.generate_content(
-                                            model="gemini-3.5-flash", 
-                                            contents=prompt,
-                                            config=gen_config
+                                            model="gemini-1.5-flash", 
+                                            contents=prompt
                                         )
                                         
                                         # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
@@ -924,7 +915,6 @@ Criteria:
 6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
-                    gen_config = types.GenerateContentConfig(temperature=0.7)
 
                 else:
                     prompt = f"""You are a YouTube creator replying to a comment.
@@ -940,12 +930,10 @@ Rules:
 5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                    gen_config = types.GenerateContentConfig(temperature=0.4)
 
                 response = client.models.generate_content(
-                    model="gemini-3.5-flash", 
-                    contents=prompt,
-                    config=gen_config
+                    model="gemini-1.5-flash", 
+                    contents=prompt
                 )
 
                 # Strip trailing spaces and strictly remove hidden newlines that crash UI rendering
@@ -1093,7 +1081,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-1.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.session_state["user_gemini_api_key"] = user_api_key.strip()
@@ -1198,7 +1186,7 @@ elif st.session_state.get("youtube_creds") is None:
                         try:
                             client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
-                                model="gemini-3.5-flash", 
+                                model="gemini-1.5-flash", 
                                 contents="Say hello in 3 words."
                             )
                             st.success("✓ Master AI active! Click on Connect YouTube below.")
