@@ -28,12 +28,11 @@ def get_secret(key, default=None):
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
 CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
- 
- # Dynamic Routing: Uses Cloud URL unless REDIRECT_URI is explicitly set in .env for localhost
--REDIRECT_URI = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app") 
-+APP_URL = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app")
- 
- os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+# Dynamic Routing: Uses Cloud URL unless REDIRECT_URI is explicitly set in .env for localhost
+APP_URL = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app") 
+
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 # --- Page Config ---
 st.set_page_config(layout="wide", page_title="Cruise Comment", initial_sidebar_state="expanded")
 
