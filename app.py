@@ -26,8 +26,8 @@ def get_secret(key, default=None):
     return default
 
 MASTER_API_KEY = get_secret("GEMINI_API_KEY")
-CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
+MASTER_CLIENT_ID = get_secret("GOOGLE_CLIENT_ID")
+MASTER_CLIENT_SECRET = get_secret("GOOGLE_CLIENT_SECRET")
 
 # Dynamic Routing: Uses Cloud URL unless REDIRECT_URI is explicitly set in .env for localhost
 APP_URL = get_secret("REDIRECT_URI", "https://cruise-comment-ai.streamlit.app") 
