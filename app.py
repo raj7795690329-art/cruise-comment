@@ -280,7 +280,7 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    for _ in range(50):
+                    for _ in range(5):
                         try:
                             req = youtube.commentThreads().list(
                                 part="snippet,replies",
