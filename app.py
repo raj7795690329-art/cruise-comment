@@ -493,10 +493,18 @@ if st.session_state.get("youtube_creds") is not None:
                 col1, col2 = st.columns([5, 1])
                 with col2:
                     if st.button("💾 Save Settings", use_container_width=True):
-                        st.session_state["saved_channel_context"] = current_niche_input
-                        st.session_state["context_locked"] = True
-                        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
-                            f.write(current_niche_input.strip())
+                        clean_input = current_niche_input.strip()
+                        st.session_state["saved_channel_context"] = clean_input
+                        
+                        if clean_input:
+                            st.session_state["context_locked"] = True
+                            with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
+                                f.write(clean_input)
+                        else:
+                            # Unlocks the UI and deletes the file if saved empty
+                            st.session_state["context_locked"] = False
+                            if os.path.exists(CONTEXT_FILE):
+                                os.remove(CONTEXT_FILE)
                         st.rerun()
             else:
                 c1, c2 = st.columns([5, 1], vertical_alignment="center")
@@ -768,7 +776,7 @@ Output ONLY the reply text."""
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
-Style: {active_context}
+Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -776,8 +784,9 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. No hyphens (-).
-5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
+5. No hyphens (-).
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
