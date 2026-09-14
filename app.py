@@ -280,7 +280,7 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    for _ in range(5):
+                    for _ in range(50):
                         try:
                             req = youtube.commentThreads().list(
                                 part="snippet,replies",
@@ -733,7 +733,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key)
+                                        client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -776,7 +776,7 @@ Output ONLY the reply text."""
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
-Style: {active_context}
+Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -784,8 +784,9 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. No hyphens (-).
-5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
+5. No hyphens (-).
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
@@ -876,7 +877,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key)
+                client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
