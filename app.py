@@ -553,7 +553,7 @@ if st.session_state.get("youtube_creds") is not None:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
         
-        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([2.5, 1.4, 1.8, 1.4, 1.0, 2.0, 0.7, 2.0], vertical_alignment="bottom")
+        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.7, 1.3, 1.6, 1.3, 1.0, 1.6, 0.7, 1.6], vertical_alignment="bottom")
         
         with col_v:
             selected_video_title = st.selectbox("Video Filter", video_options, index=video_options.index(current_selection))
