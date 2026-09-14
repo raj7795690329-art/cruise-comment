@@ -553,18 +553,15 @@ if st.session_state.get("youtube_creds") is not None:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
         
-        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.7, 1.3, 1.6, 1.3, 1.0, 1.6, 0.7, 1.6], vertical_alignment="bottom")
+        col_v, col_f, col_s, col_m, col_len, col_mod, col_l, col_b = st.columns([1.8, 1.1, 1.5, 1.1, 1.1, 1.4, 0.9, 1.6], vertical_alignment="bottom")
         
         with col_v:
             selected_video_title = st.selectbox("Video Filter", video_options, index=video_options.index(current_selection))
             st.session_state["selected_video_filter"] = selected_video_title
-        if filter_view == "Pending": 
-            display_comments = [c for c in display_comments if c["id"] not in handled_set or c["id"] in st.session_state.get("session_visible_handled", set())]
-        elif filter_view == "Handled": 
-            display_comments = [c for c in display_comments if c["id"] in handled_set]
-        if sort_order == "Newest First": display_comments = sorted(display_comments, key=lambda x: x["snippet"]["topLevelComment"]["snippet"]["publishedAt"], reverse=True)
-        elif sort_order == "Oldest First": display_comments = sorted(display_comments, key=lambda x: x["snippet"]["topLevelComment"]["snippet"]["publishedAt"], reverse=False)
-        else: display_comments = sorted(display_comments, key=lambda x: st.session_state["video_title_cache"].get(x["snippet"]["topLevelComment"]["snippet"].get("videoId", ""), "").lower())
+        with col_f:
+            filter_view = st.selectbox("View", ["Unresponded", "All Comments", "Handled"])
+        with col_s:
+            sort_order = st.selectbox("Sort", ["Newest to Oldest", "Oldest to Newest", "Video Name (A-Z)"])
         with col_m:
             global_mood = st.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]))
             st.session_state["global_mood"] = global_mood
