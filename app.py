@@ -11,6 +11,10 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
+import socket
+
+# NEW: Global kill-switch to prevent infinite Streamlit freezes
+socket.setdefaulttimeout(15.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -996,13 +1000,22 @@ Output ONLY the reply text."""
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
-                    # NEW: Skip dead/rejected comments without halting the queue
                     st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
                     st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(1) # Brief pause before cruising to the next comment
+                    time.sleep(1) 
+                    st.rerun()
+                elif "403" in err_str or "quotaExceeded" in err_str:
+                    st.session_state["ai_errors"][comment_id] = "403 Quota Exceeded: YouTube Data API daily limit reached."
+                    st.session_state["auto_reply_paused"] = True
+                    st.session_state["queue_warning"] = "🛑 YouTube API limit reached."
+                    st.rerun()
+                elif "Content has no parts" in err_str or "safety" in err_str.lower():
+                    st.session_state["ai_errors"][comment_id] = "Skipped: AI response blocked by Google Safety Guidelines."
+                    st.session_state["auto_reply_queue"].pop(0)
+                    time.sleep(1)
                     st.rerun()
                 else:
-                    error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
+                    error_msg = "Network Timeout: Server dropped connection." if "timed out" in err_str.lower() else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
                     st.session_state["auto_reply_paused"] = True
                     st.session_state["queue_warning"] = f"🛑 Queue halted: {error_msg}"
