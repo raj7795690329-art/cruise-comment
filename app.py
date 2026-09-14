@@ -11,10 +11,6 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
-import socket
-
-# NEW: Global kill-switch to prevent infinite Streamlit freezes
-socket.setdefaulttimeout(15.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -284,7 +280,7 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    for _ in range(50):
+                    for _ in range(5):
                         try:
                             req = youtube.commentThreads().list(
                                 part="snippet,replies",
@@ -497,18 +493,10 @@ if st.session_state.get("youtube_creds") is not None:
                 col1, col2 = st.columns([5, 1])
                 with col2:
                     if st.button("💾 Save Settings", use_container_width=True):
-                        clean_input = current_niche_input.strip()
-                        st.session_state["saved_channel_context"] = clean_input
-                        
-                        if clean_input:
-                            st.session_state["context_locked"] = True
-                            with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
-                                f.write(clean_input)
-                        else:
-                            # Unlocks the UI and deletes the file if saved empty
-                            st.session_state["context_locked"] = False
-                            if os.path.exists(CONTEXT_FILE):
-                                os.remove(CONTEXT_FILE)
+                        st.session_state["saved_channel_context"] = current_niche_input
+                        st.session_state["context_locked"] = True
+                        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
+                            f.write(current_niche_input.strip())
                         st.rerun()
             else:
                 c1, c2 = st.columns([5, 1], vertical_alignment="center")
@@ -737,7 +725,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
+                                        client = genai.Client(api_key=active_key)
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -780,7 +768,7 @@ Output ONLY the reply text."""
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
-Style/Background Info: {active_context}
+Style: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -788,9 +776,8 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
-5. No hyphens (-).
-6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. No hyphens (-).
+5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
@@ -881,7 +868,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
+                client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -1000,22 +987,13 @@ Output ONLY the reply text."""
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
+                    # NEW: Skip dead/rejected comments without halting the queue
                     st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
                     st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(1) 
-                    st.rerun()
-                elif "403" in err_str or "quotaExceeded" in err_str:
-                    st.session_state["ai_errors"][comment_id] = "403 Quota Exceeded: YouTube Data API daily limit reached."
-                    st.session_state["auto_reply_paused"] = True
-                    st.session_state["queue_warning"] = "🛑 YouTube API limit reached."
-                    st.rerun()
-                elif "Content has no parts" in err_str or "safety" in err_str.lower():
-                    st.session_state["ai_errors"][comment_id] = "Skipped: AI response blocked by Google Safety Guidelines."
-                    st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(1)
+                    time.sleep(1) # Brief pause before cruising to the next comment
                     st.rerun()
                 else:
-                    error_msg = "Network Timeout: Server dropped connection." if "timed out" in err_str.lower() else err_str
+                    error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
                     st.session_state["auto_reply_paused"] = True
                     st.session_state["queue_warning"] = f"🛑 Queue halted: {error_msg}"
