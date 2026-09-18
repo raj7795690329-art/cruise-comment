@@ -993,9 +993,9 @@ Output ONLY the reply text."""
                     st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
                     time.sleep(30)
                     st.rerun() 
-                elif "503" in err_str and retry_count < 2:
+                elif ("503" in err_str or "timed out" in err_str.lower() or "timeout" in err_str.lower()) and retry_count < 2:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                    st.session_state["queue_warning"] = f"⏳ 503 Server Busy. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
+                    st.session_state["queue_warning"] = f"⏳ Connection Timed Out or Server Busy. Retrying in 15 seconds... (Attempt {retry_count + 1}/3)"
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
