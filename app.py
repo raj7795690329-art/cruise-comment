@@ -1013,12 +1013,6 @@ Output ONLY the reply text."""
                     st.session_state["auto_reply_queue"].pop(0)
                     time.sleep(1)
                     st.rerun()
-        reason = f"YouTube rejected the reply content. Raw error: {err_str[:300]}"
-
-    st.session_state["ai_errors"][comment_id] = f"Skipped: {reason}"
-    st.session_state["auto_reply_queue"].pop(0)
-    time.sleep(1)
-    st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
