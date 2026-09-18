@@ -767,8 +767,8 @@ Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.7)
 
                                         else:
-                                            prompt = f"""You are a YouTube creator replying to a comment.
-Style: {active_context}
+                    prompt = f"""You are a YouTube creator replying to a comment.
+Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -776,11 +776,12 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. No hyphens (-).
-5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
+5. No hyphens (-).
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                                            gen_config = types.GenerateContentConfig(temperature=0.4)
+                    gen_config = types.GenerateContentConfig(temperature=0.4)
 
                                         active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
                                         models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
