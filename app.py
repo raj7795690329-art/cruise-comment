@@ -14,8 +14,6 @@ import streamlit.components.v1 as components
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
-import socket
-socket.setdefaulttimeout(15.0)
 
 def get_secret(key, default=None):
     if key in os.environ and os.environ[key]:
@@ -282,7 +280,7 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    for _ in range(50):
+                    for _ in range(5):
                         try:
                             req = youtube.commentThreads().list(
                                 part="snippet,replies",
@@ -299,9 +297,7 @@ if st.session_state.get("youtube_creds") is not None:
                         except Exception:
                             break
                             
-                    # Strip duplicate IDs caused by YouTube API pagination overlap
-                    unique_fetched = {c["id"]: c for c in fetched_comments}
-                    st.session_state["channel_comments"] = list(unique_fetched.values())
+                    st.session_state["channel_comments"] = fetched_comments
                     st.session_state["force_fetch"] = False
                     
                     missing_vids = []
@@ -603,14 +599,7 @@ if st.session_state.get("youtube_creds") is not None:
             if st.button(btn_text, disabled=is_replying_btn, use_container_width=True):
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
                 if active_key:
-                    # NEW: Disconnect queue generator from UI rendering to guarantee full batch processing
-                    raw_target_vid = video_mapping.get(st.session_state["selected_video_filter"])
-                    base_list = live_comments
-                    if raw_target_vid is not None:
-                        base_list = [c for c in base_list if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == raw_target_vid]
-                        
-                    pending_in_view = [c for c in base_list if c["id"] not in st.session_state["replied_comments"]]
-                    
+                    pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
                     if not pending_in_view:
                         st.toast("No pending comments in the current view to reply to!")
                     else:
@@ -633,8 +622,7 @@ if st.session_state.get("youtube_creds") is not None:
         is_all_videos = "All Videos" in current_selection
 
         if live_comments:
-            # Universal render cap: Only draws the top 100 cards to prevent memory overload
-            for item in display_comments[:100]:
+            for item in display_comments:
                 comment_id = item["id"]
                 video_id = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
                 
@@ -880,7 +868,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
+                client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -993,16 +981,16 @@ Output ONLY the reply text."""
                     st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
                     time.sleep(30)
                     st.rerun() 
-                elif ("503" in err_str or "timed out" in err_str.lower() or "timeout" in err_str.lower()) and retry_count < 2:
+                elif "503" in err_str and retry_count < 2:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                    st.session_state["queue_warning"] = f"⏳ Connection Timed Out or Server Busy. Retrying in 15 seconds... (Attempt {retry_count + 1}/3)"
+                    st.session_state["queue_warning"] = f"⏳ 503 Server Busy. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
-                    # UNHIDE ERROR: Display the raw YouTube response to verify if it's text formatting or a limit
-                    st.session_state["ai_errors"][comment_id] = f"400 Rejected by YouTube: {err_str}"
+                    # NEW: Skip dead/rejected comments without halting the queue
+                    st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
                     st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(2) # Slight slow down
+                    time.sleep(1) # Brief pause before cruising to the next comment
                     st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
