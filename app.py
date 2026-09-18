@@ -14,6 +14,8 @@ import streamlit.components.v1 as components
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
+import socket
+socket.setdefaulttimeout(15.0)
 
 def get_secret(key, default=None):
     if key in os.environ and os.environ[key]:
@@ -878,7 +880,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key)
+                client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -997,10 +999,10 @@ Output ONLY the reply text."""
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
-                    # NEW: Skip dead/rejected comments without halting the queue
-                    st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
+                    # UNHIDE ERROR: Display the raw YouTube response to verify if it's text formatting or a limit
+                    st.session_state["ai_errors"][comment_id] = f"400 Rejected by YouTube: {err_str}"
                     st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(1) # Brief pause before cruising to the next comment
+                    time.sleep(2) # Slight slow down
                     st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
