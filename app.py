@@ -578,8 +578,7 @@ if st.session_state.get("youtube_creds") is not None:
         with col_s:
             sort_order = st.selectbox("Sort", ["Newest to Oldest", "Oldest to Newest", "Video Name (A-Z)"])
         with col_m:
-            mood_list = ["Friendly", "Professional", "Funny", "Sassy", "Navya"]
-            global_mood = st.selectbox("Mood", mood_list, index=mood_list.index(st.session_state.get("global_mood", "Friendly")))
+            global_mood = st.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]))
             st.session_state["global_mood"] = global_mood
         with col_len:
             global_length = st.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]))
@@ -856,8 +855,7 @@ Output ONLY the reply text."""
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
-                        mood_list = ["Friendly", "Professional", "Funny", "Sassy", "Navya"]
-                        ca_mood.selectbox("Mood", mood_list, index=mood_list.index(st.session_state.get("global_mood", "Friendly")), key=f"mood_{comment_id}", label_visibility="collapsed")
+                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
                         ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
                     if comment_id in st.session_state.get("ai_errors", {}):
