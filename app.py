@@ -987,11 +987,33 @@ Output ONLY the reply text."""
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
-                    # NEW: Skip dead/rejected comments without halting the queue
-                    st.session_state["ai_errors"][comment_id] = "Skipped: Target comment deleted or text rejected by YouTube."
-                    st.session_state["auto_reply_queue"].pop(0)
-                    time.sleep(1) # Brief pause before cruising to the next comment
-                    st.rerun()
+    # Try to find out WHY: is the comment actually gone, or was the reply text rejected?
+    comment_still_exists = True
+    try:
+        check = youtube.comments().list(part="id", id=comment_id).execute()
+        comment_still_exists = bool(check.get("items"))
+    except Exception:
+        comment_still_exists = False  # lookup itself failing usually means it's gone
+
+    if not comment_still_exists:
+        reason = "Comment was deleted or removed before reply could post."
+    else:
+        # Comment exists, so YouTube rejected the REPLY TEXT itself (links, spammy pattern,
+        # banned words, near-duplicate of a recent reply, etc.) — retry once with a
+        # trimmed, plainer version before giving up.
+        if retry_count < 1:
+            st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
+            st.session_state["queue_warning"] = f"⚠️ Reply text rejected for a comment, retrying with simplified text..."
+            # Force a shorter/plainer version on next pass by flagging it
+            st.session_state["auto_reply_queue"][0]["force_simple_retry"] = True
+            time.sleep(2)
+            st.rerun()
+        reason = f"YouTube rejected the reply content. Raw error: {err_str[:300]}"
+
+    st.session_state["ai_errors"][comment_id] = f"Skipped: {reason}"
+    st.session_state["auto_reply_queue"].pop(0)
+    time.sleep(1)
+    st.rerun()
                 else:
                     error_msg = "429 Quota Exhausted: Daily API limit completely drained." if "429" in err_str else err_str
                     st.session_state["ai_errors"][comment_id] = error_msg
