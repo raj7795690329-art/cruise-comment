@@ -578,7 +578,8 @@ if st.session_state.get("youtube_creds") is not None:
         with col_s:
             sort_order = st.selectbox("Sort", ["Newest to Oldest", "Oldest to Newest", "Video Name (A-Z)"])
         with col_m:
-            global_mood = st.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]))
+            mood_list = ["Friendly", "Professional", "Funny", "Sassy", "Navya"]
+            global_mood = st.selectbox("Mood", mood_list, index=mood_list.index(st.session_state.get("global_mood", "Friendly")))
             st.session_state["global_mood"] = global_mood
         with col_len:
             global_length = st.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]))
@@ -747,28 +748,27 @@ if st.session_state.get("youtube_creds") is not None:
                                         
                                         single_vid_title = st.session_state["video_title_cache"].get(video_id, "Unknown Title")
                                         
-                                        length_instruction = "Provide a standard response."
-                if chosen_length == "Small":
-                    length_instruction = "Write exactly ONE short, complete sentence (under 12 words) or just use emojis. Ensure the thought is finished."
-                elif chosen_length == "Medium":
-                    length_instruction = "Write exactly ONE or TWO complete sentences. You must naturally finish your sentences with punctuation."
-                elif chosen_length == "Long":
-                    length_instruction = "Write a detailed, thoughtful response consisting of 3 to 4 complete sentences."
+                                        length_instruction = ""
+                                        if chosen_length == "Small":
+                                            length_instruction = "Write exactly ONE short, complete sentence (under 12 words) or just use emojis. Ensure the thought is finished."
+                                        elif chosen_length == "Medium":
+                                            length_instruction = "Write exactly ONE or TWO complete sentences. You must naturally finish your sentences with punctuation."
+                                        elif chosen_length == "Long":
+                                            length_instruction = "Write a detailed, thoughtful response consisting of 3 to 4 complete sentences."
 
-                # Inject the "Navya" persona
-                tone_instruction = f"{chosen_mood.upper()}. Authentic."
-                if chosen_mood == "Navya":
-                    tone_instruction = "Extremely mean, savage, ruthlessly sarcastic, and roasting."
+                                        tone_instruction = f"{chosen_mood.upper()}. Authentic."
+                                        if chosen_mood == "Navya":
+                                            tone_instruction = "Extremely mean, savage, ruthlessly sarcastic, and roasting."
 
-                if st.session_state.get("global_ai_mode") == "Deep Context":
-                    single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
-                    ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
-                    ambient_text = "\n- ".join(ambient_comments[:30]) if ambient_comments else "No other comments."
-                    if len(ambient_text) > 2500:
-                        ambient_text = ambient_text[:2500] + "... (truncated)"
-                    ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
-                    
-                    prompt = f"""You are a professional YouTube creator responding to viewer comments.
+                                        if st.session_state.get("global_ai_mode") == "Deep Context":
+                                            single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
+                                            ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
+                                            ambient_text = "\n- ".join(ambient_comments[:30]) if ambient_comments else "No other comments."
+                                            if len(ambient_text) > 2500:
+                                                ambient_text = ambient_text[:2500] + "... (truncated)"
+                                            ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
+                                            
+                                            prompt = f"""You are a professional YouTube creator responding to viewer comments.
 Your channel's specific niche and background info: {active_context}
 
 Context about the video:
@@ -787,10 +787,10 @@ Criteria:
 7. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
-                    gen_config = types.GenerateContentConfig(temperature=0.7)
+                                            gen_config = types.GenerateContentConfig(temperature=0.7)
 
-                else:
-                    prompt = f"""You are a YouTube creator replying to a comment.
+                                        else:
+                                            prompt = f"""You are a YouTube creator replying to a comment.
 Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
@@ -804,7 +804,8 @@ Rules:
 6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
-                    gen_config = types.GenerateContentConfig(temperature=0.4)
+                                            gen_config = types.GenerateContentConfig(temperature=0.4)
+
                                         active_model = st.session_state.get("active_ai_model", "gemini-3.5-flash")
                                         models_hierarchy = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
                                         start_idx = models_hierarchy.index(active_model) if active_model in models_hierarchy else 0
@@ -855,7 +856,8 @@ Output ONLY the reply text."""
                             else:
                                 st.error("API Key missing. Please provide an API key in Setup.")
                                 
-                        ca_mood.selectbox("Mood", ["Friendly", "Professional", "Funny", "Sassy"], index=["Friendly", "Professional", "Funny", "Sassy"].index(st.session_state["global_mood"]), key=f"mood_{comment_id}", label_visibility="collapsed")
+                        mood_list = ["Friendly", "Professional", "Funny", "Sassy", "Navya"]
+                        ca_mood.selectbox("Mood", mood_list, index=mood_list.index(st.session_state.get("global_mood", "Friendly")), key=f"mood_{comment_id}", label_visibility="collapsed")
                         ca_len.selectbox("Length", ["Small", "Medium", "Long"], index=["Small", "Medium", "Long"].index(st.session_state["global_length"]), key=f"len_{comment_id}", label_visibility="collapsed")
                     
                     if comment_id in st.session_state.get("ai_errors", {}):
@@ -912,6 +914,10 @@ Output ONLY the reply text."""
                 elif chosen_length == "Long":
                     length_instruction = "Write a detailed, thoughtful response consisting of 3 to 4 complete sentences."
 
+                tone_instruction = f"{chosen_mood.upper()}. Authentic."
+                if chosen_mood == "Navya":
+                    tone_instruction = "Extremely mean, savage, ruthlessly sarcastic, and roasting."
+
                 if st.session_state.get("global_ai_mode") == "Deep Context":
                     single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
                     ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
@@ -928,7 +934,7 @@ Context about the video:
 TARGET COMMENT TO REPLY TO: "{text}"
 
 Criteria:
-1. Tone: {chosen_mood.upper()}. Authentic.
+1. Tone: {tone_instruction}
 2. Length: {length_instruction}
 3. Do not ask questions automatically.
 4. Relevance Filter: ONLY use your niche/background info if it directly relates to the Viewer Comment. If irrelevant, ignore it.
@@ -946,7 +952,7 @@ Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
 Rules:
-1. Tone: {chosen_mood.upper()}
+1. Tone: {tone_instruction}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
 4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
