@@ -11,6 +11,10 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
+import socket
+
+# --- Global kill-switch to prevent infinite Streamlit network freezes & premature dropouts ---
+socket.setdefaulttimeout(120.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -830,7 +834,10 @@ Output ONLY the reply text."""
                                         st.rerun()
                                     except Exception as e:
                                         err_str = str(e).lower()
-                                        if "503" in err_str or "time" in err_str or "read operation" in err_str:
+                                        if "api_key_invalid" in err_str or "api key not valid" in err_str:
+                                            st.session_state["ai_errors"][comment_id] = "Invalid Gemini API Key."
+                                            st.error("Invalid Gemini API Key. Please update it in the Setup panel.")
+                                        elif "503" in err_str or "time" in err_str or "read operation" in err_str:
                                             st.session_state["ai_errors"][comment_id] = "Server Timeout / 503. Please click Draft again."
                                             st.error("Google server took too long to respond. Please click draft again.")
                                         else:
@@ -899,9 +906,7 @@ Output ONLY the reply text."""
                 if st.session_state.get("global_ai_mode") == "Deep Context":
                     single_vid_desc = st.session_state["video_desc_cache"].get(video_id, "No description provided.")[:800]
                     ambient_comments = [c["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for c in live_comments if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == video_id]
-                    ambient_text = "\n- ".join(ambient_comments[:30]) if ambient_comments else "No other comments."
-                    if len(ambient_text) > 2500:
-                        ambient_text = ambient_text[:2500] + "... (truncated)"
+                    ambient_text = "\n- ".join(ambient_comments[:50]) if ambient_comments else "No other comments."
                     ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
                     
                     prompt = f"""You are a professional YouTube creator responding to viewer comments.
@@ -993,7 +998,12 @@ Output ONLY the reply text."""
                 err_str = str(e)
                 retry_count = current_item.get("retry_count", 0)
                 
-                if "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
+                if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                    st.session_state["ai_errors"][comment_id] = "🛑 Invalid Gemini API Key. Please update it in Setup."
+                    st.session_state["auto_reply_paused"] = True
+                    st.session_state["queue_warning"] = "🛑 Queue halted: Invalid Gemini API Key."
+                    st.rerun()
+                elif "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
                     st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
                     time.sleep(30)
