@@ -56,6 +56,7 @@ if os.path.exists(KEYS_FILE):
         saved_keys = {}
 
 def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
+    global saved_keys
     if os.path.exists(KEYS_FILE):
         try:
             with open(KEYS_FILE, "r", encoding="utf-8") as f:
@@ -64,9 +65,15 @@ def update_persisted_keys(api_key=None, client_id=None, client_secret=None):
             data = {}
     else:
         data = {}
-    if api_key is not None: data["api_key"] = api_key.strip()
-    if client_id is not None: data["client_id"] = client_id.strip()
-    if client_secret is not None: data["client_secret"] = client_secret.strip()
+    if api_key is not None: 
+        data["api_key"] = api_key.strip()
+        saved_keys["api_key"] = api_key.strip()
+    if client_id is not None: 
+        data["client_id"] = client_id.strip()
+        saved_keys["client_id"] = client_id.strip()
+    if client_secret is not None: 
+        data["client_secret"] = client_secret.strip()
+        saved_keys["client_secret"] = client_secret.strip()
     with open(KEYS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
@@ -606,7 +613,7 @@ if st.session_state.get("youtube_creds") is not None:
             btn_text = "🤖 Auto-Replying..." if is_replying_btn else "🤖 Reply All with AI"
             if st.button(btn_text, disabled=is_replying_btn, use_container_width=True):
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                if active_key:
+                if active_key and active_key.strip():
                     pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
                     if not pending_in_view:
                         st.toast("No pending comments in the current view to reply to!")
@@ -730,10 +737,10 @@ if st.session_state.get("youtube_creds") is not None:
                         ca_btn, ca_mood, ca_len = st.columns([2, 2, 2], vertical_alignment="bottom")
                         if ca_btn.button("🤖 Draft AI Reply", key=f"ai_{comment_id}", use_container_width=True):
                             active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                            if active_key:
+                            if active_key and active_key.strip():
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key)
+                                        client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -886,7 +893,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key)
+                client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -1158,7 +1165,7 @@ elif st.session_state.get("youtube_creds") is None:
                 else:
                     with st.spinner("Connecting to Gemini..."):
                         try:
-                            client = genai.Client(api_key=user_api_key.strip())
+                            client = genai.Client(api_key=user_api_key.strip(), http_options={'timeout': 60.0})
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
@@ -1263,7 +1270,7 @@ elif st.session_state.get("youtube_creds") is None:
                 if MASTER_API_KEY:
                     with st.spinner("Connecting to Master Engine..."):
                         try:
-                            client = genai.Client(api_key=MASTER_API_KEY)
+                            client = genai.Client(api_key=MASTER_API_KEY, http_options={'timeout': 60.0})
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
