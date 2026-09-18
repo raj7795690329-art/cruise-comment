@@ -11,10 +11,6 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
-import socket
-
-# --- Global kill-switch to prevent infinite Streamlit network freezes & premature dropouts ---
-socket.setdefaulttimeout(120.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -737,7 +733,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
+                                        client = genai.Client(api_key=active_key)
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -837,6 +833,8 @@ Output ONLY the reply text."""
                                         if "api_key_invalid" in err_str or "api key not valid" in err_str:
                                             st.session_state["ai_errors"][comment_id] = "Invalid Gemini API Key."
                                             st.error("Invalid Gemini API Key. Please update it in the Setup panel.")
+                                            st.session_state["user_gemini_api_key"] = ""
+                                            update_persisted_keys(api_key="")
                                         elif "503" in err_str or "time" in err_str or "read operation" in err_str:
                                             st.session_state["ai_errors"][comment_id] = "Server Timeout / 503. Please click Draft again."
                                             st.error("Google server took too long to respond. Please click draft again.")
@@ -888,7 +886,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
+                client = genai.Client(api_key=active_key)
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -998,10 +996,12 @@ Output ONLY the reply text."""
                 err_str = str(e)
                 retry_count = current_item.get("retry_count", 0)
                 
-                if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                if "API_KEY_INVALID" in err_str or "API key not valid" in err_str or "api_key_invalid" in err_str.lower():
                     st.session_state["ai_errors"][comment_id] = "🛑 Invalid Gemini API Key. Please update it in Setup."
                     st.session_state["auto_reply_paused"] = True
                     st.session_state["queue_warning"] = "🛑 Queue halted: Invalid Gemini API Key."
+                    st.session_state["user_gemini_api_key"] = ""
+                    update_persisted_keys(api_key="")
                     st.rerun()
                 elif "429" in err_str and retry_count < 2 and "GenerateRequestsPerDay" not in err_str:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
@@ -1158,7 +1158,7 @@ elif st.session_state.get("youtube_creds") is None:
                 else:
                     with st.spinner("Connecting to Gemini..."):
                         try:
-                            client = genai.Client(api_key=user_api_key.strip(), http_options={'timeout': 60.0})
+                            client = genai.Client(api_key=user_api_key.strip())
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
@@ -1263,7 +1263,7 @@ elif st.session_state.get("youtube_creds") is None:
                 if MASTER_API_KEY:
                     with st.spinner("Connecting to Master Engine..."):
                         try:
-                            client = genai.Client(api_key=MASTER_API_KEY, http_options={'timeout': 60.0})
+                            client = genai.Client(api_key=MASTER_API_KEY)
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
