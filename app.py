@@ -11,6 +11,10 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
+import socket
+
+# --- Global kill-switch to prevent infinite Streamlit network freezes ---
+socket.setdefaulttimeout(15.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -93,9 +97,9 @@ def get_verifier(state):
 # --- Initialize ALL Session States Safely ---
 defaults = {
     "youtube_creds": None,
-    "channel_id": None,           
+    "channel_id": None,            
     "channel_name": "YouTube Account", 
-    "channel_logo": "",           
+    "channel_logo": "",            
     "replied_comments": set(),
     "sent_replies_log": {},
     "processed_history": [], 
@@ -280,7 +284,7 @@ if st.session_state.get("youtube_creds") is not None:
                     fetched_comments = []
                     next_token = None
                     
-                    for _ in range(5):
+                    for _ in range(50):
                         try:
                             req = youtube.commentThreads().list(
                                 part="snippet,replies",
@@ -493,10 +497,18 @@ if st.session_state.get("youtube_creds") is not None:
                 col1, col2 = st.columns([5, 1])
                 with col2:
                     if st.button("💾 Save Settings", use_container_width=True):
-                        st.session_state["saved_channel_context"] = current_niche_input
-                        st.session_state["context_locked"] = True
-                        with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
-                            f.write(current_niche_input.strip())
+                        clean_input = current_niche_input.strip()
+                        st.session_state["saved_channel_context"] = clean_input
+                        
+                        if clean_input:
+                            st.session_state["context_locked"] = True
+                            with open(CONTEXT_FILE, "w", encoding="utf-8") as f:
+                                f.write(clean_input)
+                        else:
+                            # Unlocks the UI and deletes the file if saved empty
+                            st.session_state["context_locked"] = False
+                            if os.path.exists(CONTEXT_FILE):
+                                os.remove(CONTEXT_FILE)
                         st.rerun()
             else:
                 c1, c2 = st.columns([5, 1], vertical_alignment="center")
@@ -725,7 +737,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key)
+                                        client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -747,7 +759,7 @@ if st.session_state.get("youtube_creds") is not None:
                                             ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
                                             
                                             prompt = f"""You are a professional YouTube creator responding to viewer comments.
-Your channel's specific niche and style: {active_context}
+Your channel's specific niche and background info: {active_context}
 
 Context about the video:
 - Title: {single_vid_title}
@@ -759,16 +771,17 @@ Criteria:
 1. Tone: {chosen_mood.upper()}. Authentic.
 2. Length: {length_instruction}
 3. Do not ask questions automatically.
-4. NEVER use the dash/hyphen symbol (-).
-5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
-6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
+4. Relevance Filter: ONLY use your niche/background info if it directly relates to the Viewer Comment. If irrelevant, ignore it.
+5. NEVER use the dash/hyphen symbol (-).
+6. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
+7. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.7)
 
                                         else:
                                             prompt = f"""You are a YouTube creator replying to a comment.
-Style: {active_context}
+Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -776,8 +789,9 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. No hyphens (-).
-5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
+5. No hyphens (-).
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
                                             gen_config = types.GenerateContentConfig(temperature=0.4)
@@ -868,7 +882,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key)
+                client = genai.Client(api_key=active_key, http_options={'timeout': 15.0})
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -890,7 +904,7 @@ Output ONLY the reply text."""
                     ambient_prompt_section = f"\nAudience Sentiment:\n{ambient_text}\n"
                     
                     prompt = f"""You are a professional YouTube creator responding to viewer comments.
-Your channel's specific niche and style: {active_context}
+Your channel's specific niche and background info: {active_context}
 
 Context about the video:
 - Title: {single_vid_title}
@@ -902,16 +916,17 @@ Criteria:
 1. Tone: {chosen_mood.upper()}. Authentic.
 2. Length: {length_instruction}
 3. Do not ask questions automatically.
-4. NEVER use the dash/hyphen symbol (-).
-5. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
-6. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
+4. Relevance Filter: ONLY use your niche/background info if it directly relates to the Viewer Comment. If irrelevant, ignore it.
+5. NEVER use the dash/hyphen symbol (-).
+6. Keep audience sentiment in mind, but ONLY reply to the TARGET COMMENT.
+7. Format: Output your final response as a single, continuous line of text. Do not use line breaks or formatting.
 
 Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.7)
 
                 else:
                     prompt = f"""You are a YouTube creator replying to a comment.
-Style: {active_context}
+Style/Background Info: {active_context}
 Video Title: {single_vid_title}
 Viewer Comment: "{text}"
 
@@ -919,8 +934,9 @@ Rules:
 1. Tone: {chosen_mood.upper()}
 2. Length: {length_instruction}
 3. Stance: If the comment agrees with the title, agree with them. If it disagrees, reply with a compromising/understanding tone.
-4. No hyphens (-).
-5. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
+4. Relevance Filter: ONLY use the 'Style/Background Info' if it directly answers or relates to the Viewer Comment. If it is irrelevant, completely ignore it.
+5. No hyphens (-).
+6. Format: Output your final response as a single, continuous line of text. Do not use line breaks.
 
 Output ONLY the reply text."""
                     gen_config = types.GenerateContentConfig(temperature=0.4)
