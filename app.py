@@ -297,7 +297,9 @@ if st.session_state.get("youtube_creds") is not None:
                         except Exception:
                             break
                             
-                    st.session_state["channel_comments"] = fetched_comments
+                    # Strip duplicate IDs caused by YouTube API pagination overlap
+                    unique_fetched = {c["id"]: c for c in fetched_comments}
+                    st.session_state["channel_comments"] = list(unique_fetched.values())
                     st.session_state["force_fetch"] = False
                     
                     missing_vids = []
@@ -622,7 +624,8 @@ if st.session_state.get("youtube_creds") is not None:
         is_all_videos = "All Videos" in current_selection
 
         if live_comments:
-            for item in display_comments:
+            # Universal render cap: Only draws the top 100 cards to prevent memory overload
+            for item in display_comments[:100]:
                 comment_id = item["id"]
                 video_id = item["snippet"]["topLevelComment"]["snippet"].get("videoId", "")
                 
