@@ -601,7 +601,14 @@ if st.session_state.get("youtube_creds") is not None:
             if st.button(btn_text, disabled=is_replying_btn, use_container_width=True):
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
                 if active_key:
-                    pending_in_view = [c for c in display_comments if c["id"] not in st.session_state["replied_comments"]]
+                    # NEW: Disconnect queue generator from UI rendering to guarantee full batch processing
+                    raw_target_vid = video_mapping.get(st.session_state["selected_video_filter"])
+                    base_list = live_comments
+                    if raw_target_vid is not None:
+                        base_list = [c for c in base_list if c["snippet"]["topLevelComment"]["snippet"].get("videoId") == raw_target_vid]
+                        
+                    pending_in_view = [c for c in base_list if c["id"] not in st.session_state["replied_comments"]]
+                    
                     if not pending_in_view:
                         st.toast("No pending comments in the current view to reply to!")
                     else:
