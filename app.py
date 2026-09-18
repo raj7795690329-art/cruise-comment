@@ -11,6 +11,10 @@ from googleapiclient.discovery import build
 import time
 from datetime import datetime, timezone
 import streamlit.components.v1 as components
+import socket
+
+# --- Global kill-switch to prevent infinite Streamlit network freezes & premature dropouts ---
+socket.setdefaulttimeout(120.0)
 
 # --- Open the secure vault & Bridge Streamlit Cloud Secrets ---
 load_dotenv()
@@ -733,7 +737,7 @@ if st.session_state.get("youtube_creds") is not None:
                             if active_key:
                                 with st.spinner("Drafting..."):
                                     try:
-                                        client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
+                                        client = genai.Client(api_key=active_key, http_options={'timeout': 120.0})
                                         active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                                         chosen_mood = st.session_state.get(f"mood_{comment_id}", st.session_state["global_mood"])
                                         chosen_length = st.session_state.get(f"len_{comment_id}", st.session_state["global_length"])
@@ -813,7 +817,7 @@ Output ONLY the reply text."""
                                             except Exception as inner_e:
                                                 err_str = str(inner_e)
                                                 last_error = inner_e
-                                                if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                                                if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str or "time" in err_str.lower():
                                                     if model_name != models_hierarchy[-1]:
                                                         time.sleep(1)
                                                         continue
@@ -827,9 +831,10 @@ Output ONLY the reply text."""
                                         st.session_state["ai_drafts"][comment_id] = final_reply
                                         st.rerun()
                                     except Exception as e:
-                                        if "503" in str(e):
-                                            st.session_state["ai_errors"][comment_id] = "503 Server Busy. Please click Draft again."
-                                            st.error("Google server is experiencing high demand (503). Please click draft again.")
+                                        err_str = str(e).lower()
+                                        if "503" in err_str or "time" in err_str:
+                                            st.session_state["ai_errors"][comment_id] = "Server Timeout / 503. Please click Draft again."
+                                            st.error("Google server took too long to respond. Please click draft again.")
                                         else:
                                             st.session_state["ai_errors"][comment_id] = str(e)
                                             st.error(f"Service unavailable: {e}")
@@ -878,7 +883,7 @@ Output ONLY the reply text."""
             
             try:
                 active_key = st.session_state.get("user_gemini_api_key") or saved_keys.get("api_key") or MASTER_API_KEY
-                client = genai.Client(api_key=active_key, http_options={'timeout': 60.0})
+                client = genai.Client(api_key=active_key, http_options={'timeout': 120.0})
                 active_context = st.session_state.get("saved_channel_context", "General vlogging") 
                 chosen_mood = st.session_state["global_mood"]
                 chosen_length = st.session_state["global_length"]
@@ -958,7 +963,7 @@ Output ONLY the reply text."""
                     except Exception as inner_e:
                         err_str = str(inner_e)
                         last_error = inner_e
-                        if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                        if "503" in err_str or "429" in err_str or "404" in err_str or "NOT_FOUND" in err_str or "time" in err_str.lower():
                             if model_name != models_hierarchy[-1]:
                                 time.sleep(1)
                                 continue
@@ -993,9 +998,9 @@ Output ONLY the reply text."""
                     st.session_state["queue_warning"] = "⏳ Google API speed limit hit! Auto-pausing queue for 30 seconds..."
                     time.sleep(30)
                     st.rerun() 
-                elif "503" in err_str and retry_count < 2:
+                elif ("503" in err_str or "timed out" in err_str.lower() or "timeout" in err_str.lower()) and retry_count < 2:
                     st.session_state["auto_reply_queue"][0]["retry_count"] = retry_count + 1
-                    st.session_state["queue_warning"] = f"⏳ 503 Server Busy. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
+                    st.session_state["queue_warning"] = f"⏳ Server busy/timeout. Auto-pausing queue for 15 seconds... (Attempt {retry_count + 1}/3)"
                     time.sleep(15)
                     st.rerun()
                 elif "400" in err_str or "processingFailure" in err_str:
@@ -1137,7 +1142,7 @@ elif st.session_state.get("youtube_creds") is None:
                 else:
                     with st.spinner("Connecting to Gemini..."):
                         try:
-                            client = genai.Client(api_key=user_api_key.strip(), http_options={'timeout': 60.0})
+                            client = genai.Client(api_key=user_api_key.strip(), http_options={'timeout': 120.0})
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
@@ -1242,7 +1247,7 @@ elif st.session_state.get("youtube_creds") is None:
                 if MASTER_API_KEY:
                     with st.spinner("Connecting to Master Engine..."):
                         try:
-                            client = genai.Client(api_key=MASTER_API_KEY, http_options={'timeout': 60.0})
+                            client = genai.Client(api_key=MASTER_API_KEY, http_options={'timeout': 120.0})
                             response = client.models.generate_content(
                                 model="gemini-3.5-flash", 
                                 contents="Say hello in 3 words."
